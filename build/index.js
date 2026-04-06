@@ -678,7 +678,7 @@ class GodotMCP {
         }, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 return { content: [{ type: 'text', text: `Node moved: ${JSON.stringify(JSON.parse(mcpMatch[1]))}` }] };
@@ -813,7 +813,7 @@ class GodotMCP {
         }
         const { stdout, stderr } = await this.executeOp(operation, params, args.projectPath);
         // Parse MCP_RESULT if present
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -885,7 +885,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('edit_script', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -910,7 +910,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('create_resource', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -934,7 +934,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('list_resources', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -988,7 +988,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('export_project', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -1010,7 +1010,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('validate_scene', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -1047,7 +1047,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('get_project_setting', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -1089,7 +1089,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('find_nodes', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -1297,7 +1297,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('set_layout', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (mcpMatch) {
             try {
                 const data = JSON.parse(mcpMatch[1]);
@@ -1336,7 +1336,7 @@ class GodotMCP {
         // First get layout from source node
         const getParams = { scene_path: args.scenePath, node_path: args.fromNode };
         const { stdout } = await this.executeOp('get_node_info', getParams, args.projectPath);
-        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
         if (!mcpMatch) {
             return this.error('Could not get source node info');
         }

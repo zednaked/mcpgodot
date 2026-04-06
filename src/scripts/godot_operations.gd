@@ -1217,10 +1217,10 @@ func get_node_property(params):
         printerr("[ERROR] Node not found: " + node_path)
         quit(1)
     
-    if not target.has(property):
+    if not (property in target):
         printerr("[ERROR] Node has no property: " + property)
         quit(1)
-    
+
     var value = target.get(property)
     var value_info = {
         "property": property,
