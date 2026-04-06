@@ -2714,13 +2714,10 @@ func _collect_nodes_matching(node: Node, node_type: String, name_pattern: String
             matches = false
     
     if matches and node.name != "root":
-        var node_path = ""
-        if node.get_scene() != null:
-            node_path = node.get_path()
         results.append({
             "name": node.name,
             "type": node.get_class(),
-            "path": node_path
+            "path": ""
         })
     
     if recursive:
