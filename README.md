@@ -2,11 +2,33 @@
 
 MCP server para Godot 4.x com operações avançadas de cenas e otimização de tokens.
 
+## Requisitos
+
+- Node.js 18+
+- Godot 4.x instalado
+
 ## Instalação
+
+```bash
+# Clonar repositório
+git clone https://github.com/zednaked/mcpgodot.git
+cd mcpgodot
+
+# Instalar dependências
+npm install
+
+# Build
+npm run build
+```
+
+### Instalação Global
 
 ```bash
 npm install
 npm run build
+sudo npm link
+# ou
+npm install -g .
 ```
 
 ## Uso
@@ -17,6 +39,12 @@ node build/index.js
 
 # Com compressão de tokens
 COMPRESSION_LEVEL=high node build/index.js
+
+# Com debug
+DEBUG=true node build/index.js
+
+# Com Godot específico
+GODOT_PATH=/usr/local/bin/godot node build/index.js
 ```
 
 ## Configuração
