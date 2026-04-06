@@ -322,6 +322,8 @@ class GodotMCP {
       { name: 'set_node_position_3d', desc: 'Set 3D position', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', position: 'object', global: 'boolean?', createBackup: 'boolean?' } },
       { name: 'set_node_rotation_3d', desc: 'Set 3D rotation', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', rotation: 'object', global: 'boolean?', createBackup: 'boolean?' } },
       { name: 'set_node_scale_3d', desc: 'Set 3D scale', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', scale: 'object', createBackup: 'boolean?' } },
+      { name: 'export_project', desc: 'Export project', props: { projectPath: 'string', preset: 'string?', outputPath: 'string?', debug: 'boolean?' } },
+      { name: 'validate_scene', desc: 'Validate scene', props: { projectPath: 'string', scenePath: 'string' } },
     ];
 
     this.toolDefinitions = baseTools;
@@ -411,6 +413,9 @@ class GodotMCP {
         case 'set_node_position_3d': return this.handleGenericOp('set_node_position_3d', args);
         case 'set_node_rotation_3d': return this.handleGenericOp('set_node_rotation_3d', args);
         case 'set_node_scale_3d': return this.handleGenericOp('set_node_scale_3d', args);
+        // Export & Validate
+        case 'export_project': return this.handleExportProject(args);
+        case 'validate_scene': return this.handleValidateScene(args);
         default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
       }
     });
@@ -944,6 +949,73 @@ class GodotMCP {
         resolve({ content: [{ type: 'text', text: 'Scene execution timed out' }] });
       }, 30000);
     });
+  }
+
+  private async handleExportProject(args: Record<string, unknown>) {
+    if (!args.projectPath) {
+      return this.error('Missing required params: projectPath');
+    }
+    
+    const params: Record<string, unknown> = {
+      preset: args.preset || '',
+      output_path: args.outputPath || '',
+      debug: args.debug || false
+    };
+    
+    const { stdout, stderr } = await this.executeOp('export_project', params, args.projectPath as string);
+    
+    if (stderr.includes('[ERROR]')) return this.error(`Failed: ${stderr}`);
+    
+    const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+    if (mcpMatch) {
+      try {
+        const data = JSON.parse(mcpMatch[1]);
+        return { content: [{ type: 'text', text: `Export info:\n${JSON.stringify(data, null, 2)}` }] };
+      } catch {
+        return { content: [{ type: 'text', text: stdout }] };
+      }
+    }
+    
+    return { content: [{ type: 'text', text: stdout }] };
+  }
+
+  private async handleValidateScene(args: Record<string, unknown>) {
+    if (!args.projectPath || !args.scenePath) {
+      return this.error('Missing required params: projectPath, scenePath');
+    }
+    
+    const params: Record<string, unknown> = {
+      scene_path: args.scenePath
+    };
+    
+    const { stdout, stderr } = await this.executeOp('validate_scene', params, args.projectPath as string);
+    
+    if (stderr.includes('[ERROR]')) return this.error(`Failed: ${stderr}`);
+    
+    const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+    if (mcpMatch) {
+      try {
+        const data = JSON.parse(mcpMatch[1]);
+        let message = data.valid ? '✅ Scene is valid' : '❌ Scene has issues';
+        if (data.warnings_count > 0) {
+          message += `\n⚠️ ${data.warnings_count} warnings`;
+        }
+        if (data.issues_count > 0) {
+          message += `\n❌ ${data.issues_count} issues`;
+        }
+        if (data.issues.length > 0) {
+          message += '\n\nIssues:\n' + data.issues.map((i: string) => '  - ' + i).join('\n');
+        }
+        if (data.warnings.length > 0) {
+          message += '\n\nWarnings:\n' + data.warnings.map((w: string) => '  - ' + w).join('\n');
+        }
+        return { content: [{ type: 'text', text: message }] };
+      } catch {
+        return { content: [{ type: 'text', text: stdout }] };
+      }
+    }
+    
+    return { content: [{ type: 'text', text: stdout }] };
   }
 
   private async cleanup() {

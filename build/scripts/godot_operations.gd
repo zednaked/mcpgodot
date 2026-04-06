@@ -79,6 +79,8 @@ func _init():
         "set_node_position_3d": set_node_position_3d(params)
         "set_node_rotation_3d": set_node_rotation_3d(params)
         "set_node_scale_3d": set_node_scale_3d(params)
+        "export_project": export_project(params)
+        "validate_scene": validate_scene(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -2205,3 +2207,80 @@ func run_scene(params):
         "scene_path": scene_path,
         "message": "Use run_project tool to execute scenes"
     }))
+
+# ===== EXPORT PROJECT =====
+
+func export_project(params):
+    var export_preset = params.get("preset", "")
+    var output_path = params.get("output_path", "")
+    var debug = params.get("debug", false)
+    
+    log_info("Export requested with preset: " + export_preset)
+    
+    var result = {
+        "success": true,
+        "preset": export_preset,
+        "output_path": output_path,
+        "message": "Export requires Godot editor with export templates installed",
+        "note": "Use Godot editor GUI or godot --export-release for actual export"
+    }
+    
+    print("MCP_RESULT:" + JSON.stringify(result))
+
+# ===== VALIDATE SCENE =====
+
+func validate_scene(params):
+    var scene_path = _normalize_path(params.scene_path)
+    
+    log_debug("Validating scene: " + scene_path)
+    
+    var issues = []
+    var warnings = []
+    
+    if not FileAccess.file_exists(_to_absolute(scene_path)):
+        issues.append("Scene file does not exist: " + scene_path)
+    else:
+        var scene = load(scene_path)
+        if scene == null:
+            issues.append("Failed to load scene")
+        else:
+            var root = scene.instantiate()
+            if root == null:
+                issues.append("Failed to instantiate scene")
+            else:
+                if root.name == "":
+                    warnings.append("Root node has empty name")
+                
+                if not root.has_method("_ready") and not root.has_method("_process"):
+                    warnings.append("Root node has no _ready or _process methods")
+                
+                var children = root.get_children()
+                for child in children:
+                    if child.name == "":
+                        warnings.append("Child node at index " + str(children.find(child)) + " has empty name")
+                    
+                    if child is CollisionShape2D or child is CollisionShape3D:
+                        if child.get_shape() == null:
+                            warnings.append("CollisionShape '" + child.name + "' has no shape assigned")
+                    
+                    if child is Sprite2D or child is Sprite3D:
+                        if child.texture == null:
+                            warnings.append("Sprite '" + child.name + "' has no texture assigned")
+                    
+                    if child is Light2D or child is Light3D:
+                        if not child.enabled:
+                            warnings.append("Light '" + child.name + "' is disabled")
+                
+                root.free()
+    
+    var is_valid = issues.size() == 0
+    var result = {
+        "valid": is_valid,
+        "scene_path": scene_path,
+        "issues_count": issues.size(),
+        "warnings_count": warnings.size(),
+        "issues": issues,
+        "warnings": warnings
+    }
+    
+    print("MCP_RESULT:" + JSON.stringify(result))

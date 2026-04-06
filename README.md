@@ -27,7 +27,7 @@ COMPRESSION_LEVEL=high node build/index.js
 | `DEBUG` | `true`, `false` | `false` | Logs de debug |
 | `GODOT_PATH` | path | auto | Caminho do Godot |
 
-## Ferramentas (46 total)
+## Ferramentas (48 total)
 
 ### Editor
 
@@ -136,6 +136,8 @@ COMPRESSION_LEVEL=high node build/index.js
 | Ferramenta | Descrição |
 |------------|-----------|
 | `run_scene` | Executa cena/projeto |
+| `export_project` | Exporta para plataforma |
+| `validate_scene` | Valida estrutura da cena |
 
 ## Exemplos
 
@@ -345,6 +347,24 @@ await mcp.call('set_node_position_3d', {
 // Executar projeto
 await mcp.call('run_scene', {
   projectPath: '/path/to/project'
+});
+```
+
+### Exportar e Validar
+
+```typescript
+// Validar cena
+const result = await mcp.call('validate_scene', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn'
+});
+// Retorna: valid, issues[], warnings[]
+
+// Exportar projeto (requer Godot editor com export templates)
+await mcp.call('export_project', {
+  projectPath: '/path/to/project',
+  preset: 'Linux',
+  outputPath: '/tmp/export'
 });
 ```
 

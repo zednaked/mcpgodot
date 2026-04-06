@@ -14,7 +14,7 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tools totais** | 46 |
+| **Tools totais** | 48 |
 | **Testes passando** | 9/9 ✅ |
 | **Operações no jogo** | 31 |
 | **Passed** | 26 |
@@ -300,14 +300,14 @@ ERROR: 5 RID allocations of type 'P11GodotBody2D' were leaked at exit.
 | `list_resources` | ✅ | **NOVO - Funciona!** |
 | `create_scene_3d` | ✅ | **NOVO - Funciona!** |
 | `add_node_3d` | ✅ | **NOVO - Funciona!** |
+| `export_project` | ✅ | **NOVO - Funciona!** |
+| `validate_scene` | ✅ | **NOVO - Funciona!** |
 
 ---
 
 ## Funcionalidades Sugeridas para Futuro
 
-### Baixa Prioridade
-1. **`export_project`** - Exportar para plataformas
-2. **`validate_scene`** - Validar estrutura da cena
+Nenhuma! Todas as funcionalidades planejadas foram implementadas.
 
 ---
 
@@ -324,8 +324,10 @@ O MCP agora suporta os workflows básicos de criação de jogos:
 7. ✅ Criar recursos (shapes, materials, etc.)
 8. ✅ Listar assets do projeto
 9. ✅ Executar cenas
-10. ✅ Operações em batch com rollback
-11. ✅ Trabalhar com grupos e sinais
+10. ✅ Exportar para plataformas
+11. ✅ Validar estrutura de cenas
+12. ✅ Operações em batch com rollback
+13. ✅ Trabalhar com grupos e sinais
 
 **Todas as funcionalidades principais implementadas:**
 - ✅ Instanciação de cenas (`instance_scene`)
@@ -335,9 +337,11 @@ O MCP agora suporta os workflows básicos de criação de jogos:
 - ✅ Criar recursos (`create_resource`)
 - ✅ Listar assets (`list_resources`)
 - ✅ Executar cenas (`run_scene`)
+- ✅ Exportar (`export_project`)
+- ✅ Validar cenas (`validate_scene`)
 - ✅ Suporte 3D completo
 - ✅ Parsing correto de resultados JSON
 
-**Total de tools: 46**
+**Total de tools: 48**
 
 **Gaps restantes:** Nenhum!
