@@ -549,7 +549,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('create_scene', {
             scene_path: args.scenePath, root_node_type: args.rootNodeType || 'Node2D'
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Scene created: ${args.scenePath}\n${stdout}` }] };
     }
@@ -563,7 +563,7 @@ class GodotMCP {
             scene_path: args.scenePath, node_type: args.nodeType, node_name: args.nodeName,
             parent_node_path: args.parentNodePath || 'root', properties: args.properties || {}
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node added: ${args.nodeName}\n${stdout}` }] };
     }
@@ -576,7 +576,7 @@ class GodotMCP {
             script_path: args.scriptPath, parent_node_path: args.parentNodePath || 'root',
             properties: args.properties || {}, exported_properties: args.exportedProperties || []
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node with script added: ${args.nodeName}\n${stdout}` }] };
     }
@@ -588,7 +588,7 @@ class GodotMCP {
             scene_path: args.scenePath, node_path: args.nodePath,
             script_path: args.scriptPath, create_backup: args.createBackup !== false
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Script attached: ${args.nodePath}\n${stdout}` }] };
     }
@@ -600,7 +600,7 @@ class GodotMCP {
             scene_path: args.scenePath, node_path: args.nodePath,
             property: args.property, value: args.value, create_backup: args.createBackup !== false
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Property modified: ${args.property}\n${stdout}` }] };
     }
@@ -611,7 +611,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('remove_node', {
             scene_path: args.scenePath, node_path: args.nodePath, create_backup: args.createBackup !== false
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node removed: ${args.nodePath}\n${stdout}` }] };
     }
@@ -623,7 +623,7 @@ class GodotMCP {
             scene_path: args.scenePath, node_path: args.nodePath,
             new_name: args.newName, create_backup: args.createBackup !== false
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node duplicated as ${args.newName}\n${stdout}` }] };
     }
@@ -688,7 +688,7 @@ class GodotMCP {
             scene_path: args.scenePath, operations: args.operations,
             enable_rollback: args.enableRollback !== false
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Batch failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout || `Batch complete\n${stderr}` }] };
     }
@@ -699,7 +699,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('load_sprite', {
             scene_path: args.scenePath, node_path: args.nodePath, texture_path: args.texturePath
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Sprite loaded: ${args.texturePath}\n${stdout}` }] };
     }
@@ -709,7 +709,7 @@ class GodotMCP {
         const { stdout, stderr } = await this.executeOp('save_scene', {
             scene_path: args.scenePath, new_path: args.newPath || ''
         }, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Scene saved\n${stdout}` }] };
     }
@@ -772,7 +772,7 @@ class GodotMCP {
         if (args.position)
             params.position = args.position;
         const { stdout, stderr } = await this.executeOp('instance_scene', params, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout }] };
     }
@@ -791,7 +791,7 @@ class GodotMCP {
         if (args.template)
             params.template = args.template;
         const { stdout, stderr } = await this.executeOp('create_script', params, args.projectPath);
-        if (stderr.includes('ERROR'))
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout }] };
     }

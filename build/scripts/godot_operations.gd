@@ -269,20 +269,20 @@ func create_scene(params):
     if root == null:
         printerr("[ERROR] Failed to instantiate root node type: " + root_type)
         quit(1)
-    
+
     root.name = "root"
-    root.owner = root
-    
+    # NOTE: root.owner = root is not allowed in Godot 4.6+ (node cannot own itself)
+
     var packed = PackedScene.new()
     if packed.pack(root) != OK:
         printerr("[ERROR] Failed to pack scene")
         quit(1)
-    
+
     var scene_dir = scene_path.get_base_dir()
     if scene_dir != "res://":
         var abs_dir = _to_absolute(scene_dir)
         _ensure_dir_from_absolute(abs_dir)
-    
+
     if ResourceSaver.save(packed, scene_path) != OK:
         printerr("[ERROR] Failed to save scene")
         quit(1)
@@ -1772,10 +1772,10 @@ func create_scene_3d(params):
     if root == null:
         printerr("[ERROR] Failed to instantiate root node type: " + root_type)
         quit(1)
-    
+
     root.name = "root"
-    root.owner = root
-    
+    # NOTE: root.owner = root is not allowed in Godot 4.6+ (node cannot own itself)
+
     var packed = PackedScene.new()
     if packed.pack(root) != OK:
         printerr("[ERROR] Failed to pack scene")
