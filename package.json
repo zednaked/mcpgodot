@@ -1,0 +1,22 @@
+{
+  "name": "mcpgodot",
+  "version": "1.0.0",
+  "description": "MCP server for Godot with enhanced scene operations",
+  "type": "module",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc && node scripts/build.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
