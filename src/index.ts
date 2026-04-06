@@ -281,7 +281,8 @@ class GodotMCP {
       { name: 'duplicate_node', desc: 'Duplicate node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newName: 'string', createBackup: 'boolean?' } },
       { name: 'move_node', desc: 'Move/reparent node or reorder within parent', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newParentPath: 'string?', newIndex: 'number?', createBackup: 'boolean?' } },
       { name: 'list_nodes', desc: 'List nodes in scene. fields: name,type,path,script,children_count,properties (default: name+type+path+script). maxDepth: 0=unlimited.', props: { projectPath: 'string', scenePath: 'string', fields: 'array?', maxDepth: 'number?', recursive: 'boolean?' } },
-      { name: 'batch_operations', desc: 'Batch operations', props: { projectPath: 'string', scenePath: 'string', operations: 'array', enableRollback: 'boolean?' } },
+      { name: 'batch_operations', desc: 'Batch multiple scene operations in one Godot process. Each op: {operation, ...params flat}. Accepted ops: add_node(nodeType,nodeName,parentPath,properties{}), set_node_property(nodePath,property,value), remove_node(nodePath), set_position(nodePath,position{x,y}). enableRollback default false.', props: { projectPath: 'string', scenePath: 'string', operations: 'array', enableRollback: 'boolean?' } },
+      { name: 'generate_nodes', desc: 'Bulk-create N nodes in one call. Each node: {name,type,parent,properties{}}. Auto-converts: position/size as {x,y}→Vector2, color as [r,g,b,a]→Color, polygon as [x0,y0,x1,y1,...]→PackedVector2Array. Ideal for terrain tiles, markers, grids.', props: { projectPath: 'string', scenePath: 'string', nodes: 'array', createBackup: 'boolean?' } },
       { name: 'load_sprite', desc: 'Load sprite texture', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', texturePath: 'string' } },
       { name: 'save_scene', desc: 'Save scene', props: { projectPath: 'string', scenePath: 'string', newPath: 'string?' } },
       // Node Info
@@ -412,6 +413,7 @@ class GodotMCP {
         case 'move_node': return this.handleMoveNode(args);
         case 'list_nodes': return this.handleListNodes(args);
         case 'batch_operations': return this.handleBatchOperations(args);
+        case 'generate_nodes': return this.handleGenerateNodes(args);
         case 'load_sprite': return this.handleLoadSprite(args);
         case 'save_scene': return this.handleSaveScene(args);
         case 'modify_node_property': return this.handleModifyProperty(args);
@@ -801,14 +803,28 @@ class GodotMCP {
     if (!args.projectPath || !args.scenePath || !Array.isArray(args.operations)) {
       return this.error('Missing required params: projectPath, scenePath, operations[]');
     }
-    
+
     const { stdout, stderr } = await this.executeOp('batch_operations', {
       scene_path: args.scenePath, operations: args.operations,
-      enable_rollback: args.enableRollback !== false
+      enable_rollback: !!args.enableRollback   // default false
     }, args.projectPath as string);
-    
+
     if (stderr.includes('[ERROR]')) return this.error(`Batch failed: ${stderr}`);
     return { content: [{ type: 'text', text: stdout || `Batch complete\n${stderr}` }] };
+  }
+
+  private async handleGenerateNodes(args: Record<string, unknown>) {
+    if (!args.projectPath || !args.scenePath || !Array.isArray(args.nodes)) {
+      return this.error('Missing required params: projectPath, scenePath, nodes[]');
+    }
+    const { stdout, stderr } = await this.executeOp('generate_nodes', {
+      scene_path: args.scenePath, nodes: args.nodes,
+      create_backup: !!args.createBackup
+    }, args.projectPath as string);
+    if (stderr.includes('[ERROR]')) return this.error(stderr);
+    const match = stdout.match(/MCP_RESULT:(.+)$/m);
+    const result = match ? JSON.parse(match[1]) : { done: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 
   private async handleLoadSprite(args: Record<string, unknown>) {

@@ -47,6 +47,7 @@ func _init():
         "duplicate_node": duplicate_node(params)
         "list_nodes": list_nodes(params)
         "batch_operations": batch_operations(params)
+        "generate_nodes": generate_nodes(params)
         "load_sprite": load_sprite(params)
         "save_scene": save_scene(params)
         "get_uid": get_uid(params)
@@ -674,7 +675,7 @@ func list_nodes(params):
 func batch_operations(params):
     var scene_path = _normalize_path(params.scene_path)
     var operations = params.operations
-    var enable_rollback = params.get("enable_rollback", true)
+    var enable_rollback = params.get("enable_rollback", false)
     
     log_debug("Starting batch operations on: " + scene_path + " (" + str(operations.size()) + " ops)")
     
@@ -699,11 +700,12 @@ func batch_operations(params):
     
     for i in range(operations.size()):
         var op = operations[i]
-        var op_type = op.get("operation", "")
-        var op_params = op.get("params", {})
-        
+        var normalized = _normalize_batch_op(op)
+        var op_type = normalized["operation"]
+        var op_params = normalized["params"]
+
         log_debug("Batch op " + str(i + 1) + "/" + str(operations.size()) + ": " + op_type)
-        
+
         var success = _execute_operation(root, op_type, op_params)
         
         if success:
@@ -731,6 +733,108 @@ func batch_operations(params):
     
     log_info("Batch complete: " + str(success_count) + " succeeded, " + str(fail_count) + " failed")
     print("MCP_RESULT:" + JSON.stringify({"success": success_count, "failed": fail_count, "total": operations.size()}))
+
+func _normalize_batch_op(op: Dictionary) -> Dictionary:
+    # Map operation name aliases
+    var op_name_map = {
+        "set_node_property": "modify_property",
+        "setNodeProperty":   "modify_property",
+        "setProperty":       "modify_property",
+    }
+    var op_type = op_name_map.get(op.get("operation",""), op.get("operation",""))
+
+    # Accept nested params OR flat params directly in op dict
+    var raw = op.get("params", {})
+    if raw.is_empty():
+        raw = {}
+        for key in op:
+            if key != "operation":
+                raw[key] = op[key]
+
+    # Normalize camelCase → snake_case
+    var key_map = {
+        "nodeType":       "node_type",
+        "nodeName":       "node_name",
+        "parentPath":     "parent_node_path",
+        "parentNodePath": "parent_node_path",
+        "nodePath":       "node_path",
+        "newParentPath":  "new_parent_path",
+        "scriptPath":     "script_path",
+        "newIndex":       "new_index",
+        "texturePath":    "texture_path",
+    }
+    var normalized_params = {}
+    for key in raw:
+        normalized_params[key_map.get(key, key)] = raw[key]
+
+    return {"operation": op_type, "params": normalized_params}
+
+func generate_nodes(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var nodes_data = params.nodes
+    var backup_path = ""
+    if params.get("create_backup", false):
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene: " + scene_path)
+        quit(1)
+
+    var root = scene.instantiate()
+    var created = 0
+    var skipped = 0
+
+    for node_def in nodes_data:
+        var node_type  = node_def.get("type",   "Node")
+        var node_name  = node_def.get("name",   "NewNode")
+        var parent_path = node_def.get("parent", "root")
+        var properties = node_def.get("properties", {})
+
+        var parent = _find_node_by_path(root, parent_path)
+        if parent == null:
+            printerr("[WARN] Parent not found: " + parent_path + " for " + node_name)
+            skipped += 1
+            continue
+
+        var new_node = instantiate_node(node_type)
+        if new_node == null:
+            printerr("[WARN] Cannot instantiate: " + node_type)
+            skipped += 1
+            continue
+
+        new_node.name = node_name
+
+        for prop in properties:
+            var val = properties[prop]
+            # Auto-convert common Godot types
+            if typeof(val) == TYPE_DICTIONARY and val.has("x") and val.has("y"):
+                val = Vector2(float(val.x), float(val.y))
+            elif prop == "color" and typeof(val) == TYPE_ARRAY and val.size() >= 3:
+                val = Color(float(val[0]), float(val[1]), float(val[2]),
+                            float(val[3]) if val.size() > 3 else 1.0)
+            elif prop == "polygon" and typeof(val) == TYPE_ARRAY:
+                var vecs = PackedVector2Array()
+                for j in range(0, val.size() - 1, 2):
+                    vecs.append(Vector2(float(val[j]), float(val[j+1])))
+                val = vecs
+            new_node.set(prop, val)
+
+        parent.add_child(new_node)
+        new_node.owner = root
+        created += 1
+
+    if _save_packed_scene(root, scene_path) != OK:
+        if backup_path != "": _restore_backup(scene_path, backup_path)
+        printerr("[ERROR] Failed to save scene")
+        quit(1)
+
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("generate_nodes: " + str(created) + " created, " + str(skipped) + " skipped")
+    print("MCP_RESULT:" + JSON.stringify({"created": created, "skipped": skipped, "total": nodes_data.size()}))
 
 func _execute_operation(root: Node, op_type: String, params: Dictionary) -> bool:
     match op_type:
