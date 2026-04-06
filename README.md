@@ -55,7 +55,7 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 | `DEBUG` | `true`, `false` | `false` | Logs de debug |
 | `GODOT_PATH` | path | auto | Caminho do Godot |
 
-## Ferramentas (61 total)
+## Ferramentas (72 total)
 
 ### Editor
 
@@ -219,6 +219,20 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 |------------|-----------|
 | `snapshot_scene` | Salvar estado da cena |
 | `compare_scenes` | Comparar cenas |
+
+### Runtime Debug (NOVO!)
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `runtime_connect` | Conectar ao servidor de debug do jogo |
+| `runtime_start_debug` | Iniciar jogo com servidor de debug |
+| `runtime_list_nodes` | Listar nós do jogo em execução |
+| `runtime_get_property` | Ler propriedade em tempo real |
+| `runtime_set_property` | Modificar propriedade enquanto jogo roda |
+| `runtime_call_method` | Chamar método de um nó |
+| `runtime_get_tree_info` | Info da árvore do jogo |
+| `runtime_find_node` | Buscar nó por nome/tipo |
+| `runtime_get_node_info` | Info completa de um nó |
 
 ## Exemplos
 
@@ -564,6 +578,85 @@ await mcp.call('compare_scenes', {
 });
 ```
 
+### Runtime Debug (NOVO!)
+
+O mcpgodot agora suporta operação em runtime! Você pode conectar a um jogo em execução e manipular propriedades, chamar métodos, e inspecionar o estado do jogo em tempo real.
+
+#### Como usar:
+
+1. **Adicione o script de debug ao seu projeto Godot:**
+
+   Copie `scripts/mcp_debug_server.gd` para a pasta `addons/` do seu projeto e adicione ao seu script principal:
+
+   ```gdscript
+   func _ready():
+       var debug_script = load("res://addons/mcp_debug_server.gd")
+       if debug_script:
+           var debug_server = Node.new()
+           debug_server.set_script(debug_script)
+           add_child(debug_server)
+   ```
+
+2. **Execute o jogo** - o servidor de debug inicia na porta 9090
+
+3. **Use as ferramentas runtime:**
+
+```typescript
+// Conectar ao jogo em execução
+await mcp.call('runtime_connect', {
+  projectPath: '/path/to/project'
+});
+
+// Listar todos os nós do jogo
+await mcp.call('runtime_list_nodes', {
+  projectPath: '/path/to/project',
+  maxDepth: 10
+});
+
+// Ler propriedade de um nó
+await mcp.call('runtime_get_property', {
+  projectPath: '/path/to/project',
+  nodePath: '/root/root/Player',
+  property: 'position'
+});
+
+// Modificar propriedade (mover jogador)
+await mcp.call('runtime_set_property', {
+  projectPath: '/path/to/project',
+  nodePath: '/root/root/Player',
+  property: 'position',
+  value: { x: 100, y: 200, _type: 'Vector2' }
+});
+
+// Chamar método (iniciar bola)
+await mcp.call('runtime_call_method', {
+  projectPath: '/path/to/project',
+  nodePath: '/root/root/Ball',
+  method: 'launch',
+  args: [{ x: 0.3, y: -1, _type: 'Vector2' }]
+});
+
+// Buscar nó por tipo
+await mcp.call('runtime_find_node', {
+  projectPath: '/path/to/project',
+  type: 'CharacterBody2D'
+});
+
+// Info completa de um nó
+await mcp.call('runtime_get_node_info', {
+  projectPath: '/path/to/project',
+  nodePath: '/root/root/Player'
+});
+```
+
+#### Servidor de Debug
+
+O servidor de debug usa TCP na porta 9090 e suporta:
+- Ler/modificar propriedades
+- Chamar métodos com argumentos
+- Serialização automática de Vector2, Vector3, Color
+- Listar e buscar nós dinamicamente
+
 ## Otimização de Tokens
 
 ### Schema Compression
@@ -608,7 +701,8 @@ mcpgodot/
 ├── src/
 │   ├── index.ts              # Server MCP
 │   └── scripts/
-│       └── godot_operations.gd  # GDScript operations
+│       ├── godot_operations.gd   # Operações em arquivos de cena
+│       └── mcp_debug_server.gd   # Servidor de debug runtime (NOVO!)
 ├── build/                    # Compiled output
 ├── test-suite.ts            # Tests
 ├── TEST_PLAN.md            # Plano de testes

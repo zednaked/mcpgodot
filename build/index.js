@@ -311,6 +311,16 @@ class GodotMCP {
             // Snapshot
             { name: 'snapshot_scene', desc: 'Snapshot scene', props: { projectPath: 'string', scenePath: 'string', outputPath: 'string?' } },
             { name: 'compare_scenes', desc: 'Compare scenes', props: { projectPath: 'string', sceneA: 'string', sceneB: 'string' } },
+            // Runtime Debug
+            { name: 'runtime_connect', desc: 'Connect to running game debug server', props: { projectPath: 'string', port: 'number?' } },
+            { name: 'runtime_list_nodes', desc: 'List nodes in running game', props: { projectPath: 'string', maxDepth: 'number?' } },
+            { name: 'runtime_get_property', desc: 'Get property from running game node', props: { projectPath: 'string', nodePath: 'string', property: 'string' } },
+            { name: 'runtime_set_property', desc: 'Set property in running game', props: { projectPath: 'string', nodePath: 'string', property: 'string', value: 'unknown' } },
+            { name: 'runtime_call_method', desc: 'Call method on running game node', props: { projectPath: 'string', nodePath: 'string', method: 'string', args: 'array?' } },
+            { name: 'runtime_get_tree_info', desc: 'Get running game tree info', props: { projectPath: 'string' } },
+            { name: 'runtime_find_node', desc: 'Find node in running game', props: { projectPath: 'string', pattern: 'string?', type: 'string?' } },
+            { name: 'runtime_get_node_info', desc: 'Get node info from running game', props: { projectPath: 'string', nodePath: 'string' } },
+            { name: 'runtime_start_debug', desc: 'Start game with debug server', props: { projectPath: 'string', scenePath: 'string?' } },
         ];
         this.toolDefinitions = baseTools;
         const getTools = () => {
@@ -419,6 +429,16 @@ class GodotMCP {
                 // Snapshot
                 case 'snapshot_scene': return this.handleGenericOp('snapshot_scene', args);
                 case 'compare_scenes': return this.handleGenericOp('compare_scenes', args);
+                // Runtime Debug
+                case 'runtime_connect': return this.handleRuntimeConnect(args);
+                case 'runtime_list_nodes': return this.handleRuntimeListNodes(args);
+                case 'runtime_get_property': return this.handleRuntimeGetProperty(args);
+                case 'runtime_set_property': return this.handleRuntimeSetProperty(args);
+                case 'runtime_call_method': return this.handleRuntimeCallMethod(args);
+                case 'runtime_get_tree_info': return this.handleRuntimeGetTreeInfo(args);
+                case 'runtime_find_node': return this.handleRuntimeFindNode(args);
+                case 'runtime_get_node_info': return this.handleRuntimeGetNodeInfo(args);
+                case 'runtime_start_debug': return this.handleRuntimeStartDebug(args);
                 default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
             }
         });
@@ -1027,6 +1047,174 @@ class GodotMCP {
             }
         }
         return { content: [{ type: 'text', text: stdout }] };
+    }
+    // ===== RUNTIME DEBUG HANDLERS =====
+    async sendRuntimeCommand(projectPath, command, port = 9090) {
+        const { Socket } = await import('net');
+        return new Promise((resolve) => {
+            const client = new Socket();
+            let data = '';
+            client.connect(port, '127.0.0.1', () => {
+                client.write(JSON.stringify(command) + '\n');
+            });
+            client.on('data', (chunk) => {
+                data += chunk.toString();
+            });
+            client.on('close', () => {
+                try {
+                    const response = JSON.parse(data.trim());
+                    resolve(response);
+                }
+                catch {
+                    resolve({ error: 'Invalid response from debug server' });
+                }
+            });
+            client.on('error', (err) => {
+                resolve({ error: `Connection failed: ${err.message}` });
+            });
+            setTimeout(() => {
+                client.destroy();
+                resolve({ error: 'Timeout waiting for response' });
+            }, 5000);
+        });
+    }
+    async handleRuntimeConnect(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required param: projectPath');
+        }
+        const port = args.port || 9090;
+        const result = await this.sendRuntimeCommand(args.projectPath, { command: 'ping', id: 1 }, port);
+        if (result.error) {
+            return { content: [{ type: 'text', text: `Not connected. Start game with debug server first.\nError: ${result.error}` }] };
+        }
+        return { content: [{ type: 'text', text: `Connected to debug server on port ${port}` }] };
+    }
+    async handleRuntimeListNodes(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required param: projectPath');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'list_nodes',
+            params: { max_depth: args.maxDepth || 10 },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        const nodes = result.result?.nodes || [];
+        const text = nodes.map(n => `  ${n.path} [${n.type}]`).join('\n');
+        return { content: [{ type: 'text', text: `Nodes in runtime (${nodes.length}):\n${text}` }] };
+    }
+    async handleRuntimeGetProperty(args) {
+        if (!args.projectPath || !args.nodePath || !args.property) {
+            return this.error('Missing required params: projectPath, nodePath, property');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'get_node_property',
+            params: { node_path: args.nodePath, property: args.property },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        const propData = result.result;
+        return { content: [{ type: 'text', text: `${args.nodePath}.${propData.property} = ${JSON.stringify(propData.value)} (type: ${propData.type})` }] };
+    }
+    async handleRuntimeSetProperty(args) {
+        if (!args.projectPath || !args.nodePath || !args.property || args.value === undefined) {
+            return this.error('Missing required params: projectPath, nodePath, property, value');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'set_node_property',
+            params: { node_path: args.nodePath, property: args.property, value: args.value },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        return { content: [{ type: 'text', text: `Set ${args.nodePath}.${args.property} = ${JSON.stringify(args.value)}` }] };
+    }
+    async handleRuntimeCallMethod(args) {
+        if (!args.projectPath || !args.nodePath || !args.method) {
+            return this.error('Missing required params: projectPath, nodePath, method');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'call_method',
+            params: { node_path: args.nodePath, method: args.method, args: args.args || [] },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        return { content: [{ type: 'text', text: `Called ${args.nodePath}.${args.method}() = ${JSON.stringify(result.result?.return_value)}` }] };
+    }
+    async handleRuntimeGetTreeInfo(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required param: projectPath');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'get_tree_info',
+            params: {},
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        const info = result.result;
+        return { content: [{ type: 'text', text: `Game Tree Info:\n  Root: ${info.root_name}\n  Nodes: ${info.node_count}\n  Paused: ${info.paused}` }] };
+    }
+    async handleRuntimeFindNode(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required param: projectPath');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'find_node',
+            params: { pattern: args.pattern || '', type: args.type || '' },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        const nodes = result.result?.nodes || [];
+        const text = nodes.map(n => `  ${n.path} [${n.type}]`).join('\n');
+        return { content: [{ type: 'text', text: `Found ${nodes.length} nodes:\n${text}` }] };
+    }
+    async handleRuntimeGetNodeInfo(args) {
+        if (!args.projectPath || !args.nodePath) {
+            return this.error('Missing required params: projectPath, nodePath');
+        }
+        const result = await this.sendRuntimeCommand(args.projectPath, {
+            command: 'get_node_info',
+            params: { node_path: args.nodePath },
+            id: 1
+        });
+        if (result.error) {
+            return this.error(result.error);
+        }
+        const info = result.result;
+        const props = info.properties.map(p => p.name).join(', ');
+        const methods = info.methods.slice(0, 10).join(', ') + (info.methods.length > 10 ? '...' : '');
+        return { content: [{ type: 'text', text: `Node: ${info.name} [${info.type}]\nProperties: ${props}\nMethods: ${methods}` }] };
+    }
+    async handleRuntimeStartDebug(args) {
+        if (!args.projectPath || !this.validatePath(args.projectPath)) {
+            return this.error('Invalid project path');
+        }
+        await this.ensureGodotPath();
+        if (this.activeProcess)
+            this.activeProcess.process.kill();
+        const debugScriptPath = join(__dirname, 'scripts', 'mcp_debug_server.gd');
+        const cmdArgs = ['-d', '--path', args.projectPath, '--script', debugScriptPath];
+        if (args.scenePath)
+            cmdArgs.push(args.scenePath);
+        const proc = spawn(this.godotPath, cmdArgs, { stdio: 'pipe' });
+        const output = [], errors = [];
+        proc.stdout?.on('data', (d) => output.push(...d.toString().split('\n')));
+        proc.stderr?.on('data', (d) => errors.push(...d.toString().split('\n')));
+        proc.on('exit', () => { if (this.activeProcess?.process === proc)
+            this.activeProcess = null; });
+        this.activeProcess = { process: proc, output, errors };
+        return { content: [{ type: 'text', text: 'Game started with debug server on port 9090. Wait a moment for it to load, then use runtime tools.' }] };
     }
     async cleanup() {
         if (this.activeProcess)
