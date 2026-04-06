@@ -279,6 +279,7 @@ class GodotMCP {
             { name: 'attach_script', desc: 'Attach script to node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', scriptPath: 'string', createBackup: 'boolean?' } },
             { name: 'edit_script', desc: 'Edit script content', props: { projectPath: 'string', scriptPath: 'string', content: 'string', append: 'boolean?', createBackup: 'boolean?' } },
             { name: 'create_resource', desc: 'Create resource', props: { projectPath: 'string', type: 'string', path: 'string?', properties: 'object?' } },
+            { name: 'assign_node_resource', desc: 'Assign inline resource to node property (embeds as sub_resource in .tscn — use for shapes on CollisionShape2D, materials, etc.)', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', resourceType: 'string', property: 'string?', resourceProperties: 'object?', createBackup: 'boolean?' } },
             { name: 'list_resources', desc: 'List project resources', props: { projectPath: 'string', folder: 'string?', extensions: 'array?', recursive: 'boolean?' } },
             { name: 'run_scene', desc: 'Run scene', props: { projectPath: 'string', scenePath: 'string?' } },
             // 3D Scene
@@ -385,6 +386,7 @@ class GodotMCP {
                 case 'create_script': return this.handleCreateScript(args);
                 case 'edit_script': return this.handleEditScript(args);
                 case 'create_resource': return this.handleCreateResource(args);
+                case 'assign_node_resource': return this.handleGenericOp('assign_node_resource', args);
                 case 'list_resources': return this.handleListResources(args);
                 case 'run_scene': return this.handleRunScene(args);
                 // 3D Scene

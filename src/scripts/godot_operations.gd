@@ -72,6 +72,7 @@ func _init():
         "create_script": create_script(params)
         "edit_script": edit_script(params)
         "create_resource": create_resource(params)
+        "assign_node_resource": assign_node_resource(params)
         "list_resources": list_resources(params)
         "run_scene": run_scene(params)
         "create_scene_3d": create_scene_3d(params)
@@ -2000,15 +2001,12 @@ func instantiate_node_3d(node_type: String) -> Node:
 
 # ===== RESOURCE CREATION =====
 
-func create_resource(params):
-    var resource_type = params.get("type", "Shape2D")
-    var resource_path = _normalize_path(params.get("path", "resources/new_resource.tres"))
-    var properties = params.get("properties", {})
-    
-    log_debug("Creating resource: " + resource_type + " at " + resource_path)
-    
+# ===== RESOURCE HELPERS =====
+
+# Creates a Resource instance in memory without saving it to disk.
+# Returns null and prints [ERROR] if the type is unknown.
+func _make_resource_instance(resource_type: String, properties: Dictionary):
     var resource = null
-    
     match resource_type:
         "RectangleShape2D":
             resource = RectangleShape2D.new()
@@ -2037,7 +2035,7 @@ func create_resource(params):
                 for p in properties.points:
                     pts.append(_parse_vector(p, 2))
                 resource.points = PackedVector2Array(pts)
-        "RectangleShape3D":
+        "BoxShape3D", "RectangleShape3D":
             resource = BoxShape3D.new()
             if properties.has("size"):
                 resource.size = _parse_vector(properties.size, 3)
@@ -2057,7 +2055,7 @@ func create_resource(params):
                 resource.radius = float(properties.radius)
             if properties.has("height"):
                 resource.height = float(properties.height)
-        "PlaneShape":
+        "WorldBoundaryShape3D", "PlaneShape":
             resource = WorldBoundaryShape3D.new()
             if properties.has("normal"):
                 resource.normal = _parse_vector(properties.normal, 3)
@@ -2103,12 +2101,22 @@ func create_resource(params):
             resource = GradientTexture2D.new()
         _:
             printerr("[ERROR] Unknown resource type: " + resource_type)
-            quit(1)
-    
+            return null
+    return resource
+
+func create_resource(params):
+    var resource_type = params.get("type", "Shape2D")
+    var resource_path = _normalize_path(params.get("path", "resources/new_resource.tres"))
+    var properties = params.get("properties", {})
+
+    log_debug("Creating resource: " + resource_type + " at " + resource_path)
+
+    var resource = _make_resource_instance(resource_type, properties)
+
     if resource == null:
-        printerr("[ERROR] Failed to create resource")
+        printerr("[ERROR] Failed to create resource instance")
         quit(1)
-    
+
     var abs_path = _to_absolute(resource_path)
     var dir_path = abs_path.get_base_dir()
     var dir = DirAccess.open(dir_path)
@@ -2116,16 +2124,71 @@ func create_resource(params):
         var parent_dir = DirAccess.open("res://")
         if parent_dir != null:
             parent_dir.make_dir_recursive(resource_path.replace("res://", "").get_base_dir())
-    
+
     var error = ResourceSaver.save(resource, abs_path)
     if error != OK:
         printerr("[ERROR] Failed to save resource: " + str(error))
         quit(1)
-    
+
     print("MCP_RESULT:" + JSON.stringify({
         "success": true,
         "type": resource_type,
         "path": resource_path
+    }))
+
+# Assigns a resource inline into a scene node property (e.g. shape on CollisionShape2D).
+# The resource is embedded as a sub_resource in the .tscn file by Godot's ResourceSaver.
+# Use this instead of create_resource when you don't want a standalone .tres file.
+func assign_node_resource(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var property = params.get("property", "shape")
+    var resource_type = params.resource_type
+    var resource_properties = params.get("resource_properties", {})
+    var create_backup = params.get("create_backup", true)
+
+    log_debug("Assigning " + resource_type + " to " + node_path + "." + property)
+
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene: " + scene_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+
+    var resource = _make_resource_instance(resource_type, resource_properties)
+    if resource == null:
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+
+    target.set(property, resource)
+
+    if _save_packed_scene(root, scene_path) != OK:
+        if backup_path != "": _restore_backup(scene_path, backup_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        printerr("[ERROR] Failed to save scene")
+        quit(1)
+
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Resource '" + resource_type + "' assigned to '" + node_path + "." + property + "'")
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "property": property,
+        "resource_type": resource_type
     }))
 
 func _parse_color(val) -> Color:
