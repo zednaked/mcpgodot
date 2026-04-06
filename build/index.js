@@ -276,6 +276,17 @@ class GodotMCP {
             // Scene & Script
             { name: 'instance_scene', desc: 'Instance scene', props: { projectPath: 'string', targetScenePath: 'string', sourceScenePath: 'string', parentNodePath: 'string?', nodeName: 'string?', position: 'object?' } },
             { name: 'create_script', desc: 'Create script', props: { projectPath: 'string', scriptPath: 'string', className: 'string?', extends: 'string?', template: 'string?' } },
+            { name: 'attach_script', desc: 'Attach script to node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', scriptPath: 'string', createBackup: 'boolean?' } },
+            { name: 'edit_script', desc: 'Edit script content', props: { projectPath: 'string', scriptPath: 'string', content: 'string', append: 'boolean?', createBackup: 'boolean?' } },
+            { name: 'create_resource', desc: 'Create resource', props: { projectPath: 'string', type: 'string', path: 'string?', properties: 'object?' } },
+            { name: 'list_resources', desc: 'List project resources', props: { projectPath: 'string', folder: 'string?', extensions: 'array?', recursive: 'boolean?' } },
+            { name: 'run_scene', desc: 'Run scene', props: { projectPath: 'string', scenePath: 'string?' } },
+            // 3D Scene
+            { name: 'create_scene_3d', desc: 'Create 3D scene', props: { projectPath: 'string', scenePath: 'string', rootNodeType: 'string?' } },
+            { name: 'add_node_3d', desc: 'Add 3D node', props: { projectPath: 'string', scenePath: 'string', nodeType: 'string', nodeName: 'string', parentNodePath: 'string?', properties: 'object?' } },
+            { name: 'set_node_position_3d', desc: 'Set 3D position', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', position: 'object', global: 'boolean?', createBackup: 'boolean?' } },
+            { name: 'set_node_rotation_3d', desc: 'Set 3D rotation', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', rotation: 'object', global: 'boolean?', createBackup: 'boolean?' } },
+            { name: 'set_node_scale_3d', desc: 'Set 3D scale', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', scale: 'object', createBackup: 'boolean?' } },
         ];
         this.toolDefinitions = baseTools;
         const getTools = () => {
@@ -314,6 +325,7 @@ class GodotMCP {
                 case 'create_scene': return this.handleCreateScene(args);
                 case 'add_node': return this.handleAddNode(args);
                 case 'add_node_with_script': return this.handleAddNodeWithScript(args);
+                case 'attach_script': return this.handleAttachScript(args);
                 case 'remove_node': return this.handleRemoveNode(args);
                 case 'duplicate_node': return this.handleDuplicateNode(args);
                 case 'list_nodes': return this.handleListNodes(args);
@@ -348,6 +360,16 @@ class GodotMCP {
                 // Scene & Script
                 case 'instance_scene': return this.handleInstanceScene(args);
                 case 'create_script': return this.handleCreateScript(args);
+                case 'edit_script': return this.handleEditScript(args);
+                case 'create_resource': return this.handleCreateResource(args);
+                case 'list_resources': return this.handleListResources(args);
+                case 'run_scene': return this.handleRunScene(args);
+                // 3D Scene
+                case 'create_scene_3d': return this.handleCreateScene(args);
+                case 'add_node_3d': return this.handleAddNode(args);
+                case 'set_node_position_3d': return this.handleGenericOp('set_node_position_3d', args);
+                case 'set_node_rotation_3d': return this.handleGenericOp('set_node_rotation_3d', args);
+                case 'set_node_scale_3d': return this.handleGenericOp('set_node_scale_3d', args);
                 default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
             }
         });
@@ -511,6 +533,18 @@ class GodotMCP {
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node with script added: ${args.nodeName}\n${stdout}` }] };
     }
+    async handleAttachScript(args) {
+        if (!args.projectPath || !args.scenePath || !args.nodePath || !args.scriptPath) {
+            return this.error('Missing required params');
+        }
+        const { stdout, stderr } = await this.executeOp('attach_script', {
+            scene_path: args.scenePath, node_path: args.nodePath,
+            script_path: args.scriptPath, create_backup: args.createBackup !== false
+        }, args.projectPath);
+        if (stderr.includes('ERROR'))
+            return this.error(`Failed: ${stderr}`);
+        return { content: [{ type: 'text', text: `Script attached: ${args.nodePath}\n${stdout}` }] };
+    }
     async handleModifyProperty(args) {
         if (!args.projectPath || !args.scenePath || !args.nodePath || !args.property) {
             return this.error('Missing required params');
@@ -666,7 +700,8 @@ class GodotMCP {
                 return { content: [{ type: 'text', text: mcpMatch[1] }] };
             }
         }
-        if (stderr.includes('ERROR'))
+        // Only treat as error if stderr contains [ERROR] (actual error, not Godot warnings)
+        if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout || stderr }] };
     }
@@ -712,6 +747,111 @@ class GodotMCP {
         if (stderr.includes('ERROR'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleEditScript(args) {
+        if (!args.projectPath || !args.scriptPath || !args.content) {
+            return this.error('Missing required params: projectPath, scriptPath, content');
+        }
+        const params = {
+            project_path: args.projectPath,
+            script_path: args.scriptPath,
+            content: args.content,
+            append: args.append || false,
+            create_backup: args.createBackup !== false
+        };
+        const { stdout, stderr } = await this.executeOp('edit_script', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                return { content: [{ type: 'text', text: `Script edited: ${args.scriptPath}\n${JSON.stringify(data)}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleCreateResource(args) {
+        if (!args.projectPath || !args.type) {
+            return this.error('Missing required params: projectPath, type');
+        }
+        const params = {
+            project_path: args.projectPath,
+            type: args.type,
+            path: args.path || 'resources/new_resource.tres',
+            properties: args.properties || {}
+        };
+        const { stdout, stderr } = await this.executeOp('create_resource', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                return { content: [{ type: 'text', text: `Resource created: ${params.path}\n${JSON.stringify(data)}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleListResources(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required params: projectPath');
+        }
+        const params = {
+            folder: args.folder || 'res://',
+            extensions: args.extensions || ['*.tres', '*.tscn', '*.gd', '*.png', '*.jpg'],
+            recursive: args.recursive !== false
+        };
+        const { stdout, stderr } = await this.executeOp('list_resources', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                const resourceList = data.resources.map((r) => `- ${r.type}: ${r.path}`).join('\n');
+                return { content: [{ type: 'text', text: `Found ${data.count} resources:\n${resourceList}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleRunScene(args) {
+        if (!args.projectPath) {
+            return this.error('Missing required params: projectPath');
+        }
+        const scenePath = args.scenePath;
+        const projectPath = args.projectPath;
+        const sceneArgs = scenePath ? ['--path', projectPath, scenePath] : ['--path', projectPath];
+        return new Promise((resolve) => {
+            const proc = spawn(this.godotPath, ['--headless', ...sceneArgs], {
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            let stdout = '';
+            let stderr = '';
+            proc.stdout?.on('data', (data) => { stdout += data.toString(); });
+            proc.stderr?.on('data', (data) => { stderr += data.toString(); });
+            proc.on('close', (code) => {
+                resolve({
+                    content: [{
+                            type: 'text',
+                            text: `Scene executed (exit code: ${code})\n${stdout}${stderr ? '\n' + stderr : ''}`
+                        }]
+                });
+            });
+            setTimeout(() => {
+                proc.kill();
+                resolve({ content: [{ type: 'text', text: 'Scene execution timed out' }] });
+            }, 30000);
+        });
     }
     async cleanup() {
         if (this.activeProcess)

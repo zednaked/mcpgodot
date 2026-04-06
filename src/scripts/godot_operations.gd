@@ -41,6 +41,7 @@ func _init():
         "create_scene": create_scene(params)
         "add_node": add_node(params)
         "add_node_with_script": add_node_with_script(params)
+        "attach_script": attach_script(params)
         "modify_node_property": modify_node_property(params)
         "remove_node": remove_node(params)
         "duplicate_node": duplicate_node(params)
@@ -69,6 +70,15 @@ func _init():
         "call_group_method": call_group_method(params)
         "instance_scene": instance_scene(params)
         "create_script": create_script(params)
+        "edit_script": edit_script(params)
+        "create_resource": create_resource(params)
+        "list_resources": list_resources(params)
+        "run_scene": run_scene(params)
+        "create_scene_3d": create_scene_3d(params)
+        "add_node_3d": add_node_3d(params)
+        "set_node_position_3d": set_node_position_3d(params)
+        "set_node_rotation_3d": set_node_rotation_3d(params)
+        "set_node_scale_3d": set_node_scale_3d(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -210,6 +220,30 @@ func _cleanup_backup(backup_path: String) -> void:
     if FileAccess.file_exists(backup_path):
         DirAccess.remove_absolute(backup_path)
 
+func _create_script_backup(script_path: String) -> String:
+    var abs_path = _to_absolute(script_path)
+    var backup_name = script_path.md5_text() + "_" + str(Time.get_unix_time_from_system())
+    var backup_path = "res://mcp_backups/" + backup_name + ".gd"
+    var abs_backup_path = _to_absolute(backup_path)
+    
+    var dir = DirAccess.open("res://")
+    if dir == null:
+        return ""
+    if not dir.dir_exists("mcp_backups"):
+        if dir.make_dir("mcp_backups") != OK:
+            return ""
+    
+    var source_file = FileAccess.open(abs_path, FileAccess.READ)
+    if source_file:
+        var content = source_file.get_buffer(source_file.get_length()).get_string_from_utf8()
+        source_file.close()
+        var dest_file = FileAccess.open(abs_backup_path, FileAccess.WRITE)
+        if dest_file:
+            dest_file.store_string(content)
+            dest_file.close()
+            return abs_backup_path
+    return ""
+
 func create_scene(params):
     var scene_path = _normalize_path(params.scene_path)
     var root_type = params.get("root_node_type", "Node2D")
@@ -329,6 +363,45 @@ func add_node_with_script(params):
     
     _save_packed_scene(root, scene_path)
     log_info("Node with script '" + node_name + "' added")
+
+func attach_script(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var script_path = _normalize_path(params.script_path)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Attaching script '" + script_path + "' to node '" + node_path + "'")
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var script = load(script_path)
+    if script == null:
+        printerr("[ERROR] Script not found: " + script_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    target.set_script(script)
+    
+    _save_packed_scene(root, scene_path)
+    log_info("Script '" + script_path + "' attached to '" + node_path + "'")
 
 func modify_node_property(params):
     var scene_path = _normalize_path(params.scene_path)
@@ -827,16 +900,13 @@ func get_node_info(params):
         "name": target.name,
         "type": target.get_class(),
         "path": node_path,
-        "script": null,
+        "script": null if target.get_script() == null else target.get_script().resource_path,
         "groups": target.get_groups(),
         "properties": [],
-        "signals": [],
+        "signal_names": [],
         "children_count": target.get_child_count(),
         "parent": null if target == root else target.get_parent().name
     }
-    
-    if target.get_script() != null:
-        info["script"] = target.get_script().resource_path
     
     for prop in target.get_property_list():
         if prop.usage & PROPERTY_USAGE_STORAGE:
@@ -847,10 +917,7 @@ func get_node_info(params):
             })
     
     for sig in target.get_signal_list():
-        info["signals"].append({
-            "name": sig.name,
-            "args": sig.args
-        })
+        info["signal_names"].append(sig.name)
     
     print("MCP_RESULT:" + JSON.stringify(info))
 
@@ -1636,4 +1703,505 @@ func create_script(params):
         "script_path": script_path,
         "template": template,
         "extends": extends_type
+    }))
+
+func edit_script(params):
+    var script_path = _normalize_path(params.script_path)
+    var content = params.get("content", "")
+    var create_backup = params.get("create_backup", true)
+    var append_mode = params.get("append", false)
+    
+    log_debug("Editing script: " + script_path)
+    
+    var abs_path = _to_absolute(script_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_script_backup(abs_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var file_mode = FileAccess.WRITE if not append_mode else FileAccess.READ_WRITE
+    var file = FileAccess.open(abs_path, file_mode)
+    if file == null:
+        printerr("[ERROR] Failed to open script file: " + abs_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if append_mode:
+        file.seek_end()
+        file.store_string(content)
+    else:
+        file.store_string(content)
+    file.close()
+    
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "script_path": script_path,
+        "bytes_written": content.length(),
+        "mode": "append" if append_mode else "replace"
+    }))
+
+# ===== 3D SCENE SUPPORT =====
+
+func create_scene_3d(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var root_type = params.get("root_node_type", "Node3D")
+    
+    log_debug("Creating 3D scene: " + scene_path + " with root type: " + root_type)
+    
+    var root = instantiate_node_3d(root_type)
+    if root == null:
+        printerr("[ERROR] Failed to instantiate root node type: " + root_type)
+        quit(1)
+    
+    root.name = "root"
+    root.owner = root
+    
+    var packed = PackedScene.new()
+    if packed.pack(root) != OK:
+        printerr("[ERROR] Failed to pack scene")
+        quit(1)
+    
+    var scene_dir = scene_path.get_base_dir()
+    if scene_dir != "res://":
+        var abs_dir = _to_absolute(scene_dir)
+        var dir = DirAccess.open("res://")
+        if dir != null:
+            dir.make_dir_recursive(scene_dir.replace("res://", ""))
+    
+    var abs_path = _to_absolute(scene_path)
+    var error = ResourceSaver.save(packed, abs_path)
+    if error != OK:
+        printerr("[ERROR] Failed to save scene: " + str(error))
+        quit(1)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "scene_path": scene_path,
+        "root_type": root_type
+    }))
+
+func add_node_3d(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_type = params.get("node_type", "MeshInstance3D")
+    var node_name = params.node_name
+    var properties = params.get("properties", {})
+    
+    log_debug("Adding 3D node: " + node_name + " (" + node_type + ")")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        quit(1)
+    
+    var new_node = instantiate_node_3d(node_type)
+    if new_node == null:
+        printerr("[ERROR] Failed to instantiate: " + node_type)
+        quit(1)
+    
+    new_node.name = node_name
+    
+    for prop in properties:
+        var value = properties[prop]
+        if typeof(value) == TYPE_STRING and value.begins_with("res://"):
+            value = load(value)
+        new_node.set(prop, value)
+    
+    parent.add_child(new_node)
+    new_node.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    log_info("Node '" + node_name + "' added to '" + scene_path + "'")
+
+func set_node_position_3d(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var position = params.position
+    var global = params.get("global", false)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Setting 3D position of '" + node_path + "'")
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var pos = _parse_vector(position, 3)
+    if pos == null:
+        printerr("[ERROR] Invalid position vector")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if global and target.has_method("set_global_position"):
+        target.set_global_position(pos)
+    elif target.has_method("set_position"):
+        target.set_position(pos)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Position set for '" + node_path + "'")
+
+func set_node_rotation_3d(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var rotation = params.rotation
+    var global = params.get("global", false)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Setting 3D rotation of '" + node_path + "'")
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var rot = _parse_vector(rotation, 3)
+    if rot == null:
+        printerr("[ERROR] Invalid rotation vector")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    target.rotation = rot
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Rotation set for '" + node_path + "'")
+
+func set_node_scale_3d(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var scale = params.scale
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Setting 3D scale of '" + node_path + "'")
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var sc = _parse_vector(scale, 3)
+    if sc == null:
+        printerr("[ERROR] Invalid scale vector")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    target.scale = sc
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Scale set for '" + node_path + "'")
+
+func instantiate_node_3d(node_type: String) -> Node:
+    match node_type:
+        "Node3D": return Node3D.new()
+        "MeshInstance3D": return MeshInstance3D.new()
+        "StaticBody3D": return StaticBody3D.new()
+        "RigidBody3D": return RigidBody3D.new()
+        "CharacterBody3D": return CharacterBody3D.new()
+        "Area3D": return Area3D.new()
+        "Camera3D": return Camera3D.new()
+        "DirectionalLight3D": return DirectionalLight3D.new()
+        "OmniLight3D": return OmniLight3D.new()
+        "SpotLight3D": return SpotLight3D.new()
+        "CollisionShape3D": return CollisionShape3D.new()
+        "CSGBox3D": return CSGBox3D.new()
+        "CSGCylinder3D": return CSGCylinder3D.new()
+        "CSGSphere3D": return CSGSphere3D.new()
+        "NavigationRegion3D": return NavigationRegion3D.new()
+        "WorldEnvironment": return WorldEnvironment.new()
+        "Label3D": return Label3D.new()
+        "Sprite3D": return Sprite3D.new()
+        "AnimatedSprite3D": return AnimatedSprite3D.new()
+        "VehicleBody3D": return VehicleBody3D.new()
+        "VehicleWheel3D": return VehicleWheel3D.new()
+        "Path3D": return Path3D.new()
+        "PathFollow3D": return PathFollow3D.new()
+        "GPUParticles3D": return GPUParticles3D.new()
+        "CPUParticles3D": return CPUParticles3D.new()
+        "RayCast3D": return RayCast3D.new()
+        "ShapeCast3D": return ShapeCast3D.new()
+        "VisibleOnScreenNotifier3D": return VisibleOnScreenNotifier3D.new()
+        _:
+            printerr("[ERROR] Unknown 3D node type: " + node_type)
+            return null
+
+# ===== RESOURCE CREATION =====
+
+func create_resource(params):
+    var resource_type = params.get("type", "Shape2D")
+    var resource_path = _normalize_path(params.get("path", "resources/new_resource.tres"))
+    var properties = params.get("properties", {})
+    
+    log_debug("Creating resource: " + resource_type + " at " + resource_path)
+    
+    var resource = null
+    
+    match resource_type:
+        "RectangleShape2D":
+            resource = RectangleShape2D.new()
+            if properties.has("size"):
+                resource.size = _parse_vector(properties.size, 2)
+        "CircleShape2D":
+            resource = CircleShape2D.new()
+            if properties.has("radius"):
+                resource.radius = float(properties.radius)
+        "CapsuleShape2D":
+            resource = CapsuleShape2D.new()
+            if properties.has("radius"):
+                resource.radius = float(properties.radius)
+            if properties.has("height"):
+                resource.height = float(properties.height)
+        "SegmentShape2D":
+            resource = SegmentShape2D.new()
+            if properties.has("a"):
+                resource.a = _parse_vector(properties.a, 2)
+            if properties.has("b"):
+                resource.b = _parse_vector(properties.b, 2)
+        "ConvexPolygonShape2D":
+            resource = ConvexPolygonShape2D.new()
+            if properties.has("points"):
+                var pts = []
+                for p in properties.points:
+                    pts.append(_parse_vector(p, 2))
+                resource.points = PackedVector2Array(pts)
+        "RectangleShape3D":
+            resource = BoxShape3D.new()
+            if properties.has("size"):
+                resource.size = _parse_vector(properties.size, 3)
+        "SphereShape3D":
+            resource = SphereShape3D.new()
+            if properties.has("radius"):
+                resource.radius = float(properties.radius)
+        "CapsuleShape3D":
+            resource = CapsuleShape3D.new()
+            if properties.has("radius"):
+                resource.radius = float(properties.radius)
+            if properties.has("height"):
+                resource.height = float(properties.height)
+        "CylinderShape3D":
+            resource = CylinderShape3D.new()
+            if properties.has("radius"):
+                resource.radius = float(properties.radius)
+            if properties.has("height"):
+                resource.height = float(properties.height)
+        "PlaneShape":
+            resource = WorldBoundaryShape3D.new()
+            if properties.has("normal"):
+                resource.normal = _parse_vector(properties.normal, 3)
+            if properties.has("d"):
+                resource.d = float(properties.d)
+        "WorldEnvironment":
+            resource = WorldEnvironment.new()
+        "CameraAttributes":
+            resource = CameraAttributesPractical.new()
+        "Environment":
+            resource = Environment.new()
+        "NavigationMesh":
+            resource = NavigationMesh.new()
+        "HeightMapShape3D":
+            resource = HeightMapShape3D.new()
+            if properties.has("min_height"):
+                resource.map_min_height = float(properties.min_height)
+            if properties.has("max_height"):
+                resource.map_max_height = float(properties.max_height)
+        "PhysicsMaterial":
+            resource = PhysicsMaterial.new()
+            if properties.has("friction"):
+                resource.friction = float(properties.friction)
+            if properties.has("bounce"):
+                resource.bounciness = float(properties.bounce)
+            if properties.has("absorbent"):
+                resource.absorbent = bool(properties.absorbent)
+        "StyleBoxFlat":
+            resource = StyleBoxFlat.new()
+            if properties.has("bg_color"):
+                resource.bg_color = _parse_color(properties.bg_color)
+            if properties.has("border_color"):
+                resource.border_color = _parse_color(properties.border_color)
+            if properties.has("corner_radius"):
+                resource.corner_radius_top_left = int(properties.corner_radius)
+        "StyleBoxTexture":
+            resource = StyleBoxTexture.new()
+        "Theme":
+            resource = Theme.new()
+        "Gradient":
+            resource = Gradient.new()
+        "GradientTexture2D":
+            resource = GradientTexture2D.new()
+        _:
+            printerr("[ERROR] Unknown resource type: " + resource_type)
+            quit(1)
+    
+    if resource == null:
+        printerr("[ERROR] Failed to create resource")
+        quit(1)
+    
+    var abs_path = _to_absolute(resource_path)
+    var dir_path = abs_path.get_base_dir()
+    var dir = DirAccess.open(dir_path)
+    if dir == null:
+        var parent_dir = DirAccess.open("res://")
+        if parent_dir != null:
+            parent_dir.make_dir_recursive(resource_path.replace("res://", "").get_base_dir())
+    
+    var error = ResourceSaver.save(resource, abs_path)
+    if error != OK:
+        printerr("[ERROR] Failed to save resource: " + str(error))
+        quit(1)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "type": resource_type,
+        "path": resource_path
+    }))
+
+func _parse_color(val) -> Color:
+    if typeof(val) == TYPE_COLOR:
+        return val
+    if typeof(val) == TYPE_STRING:
+        return Color(val)
+    if typeof(val) == TYPE_DICTIONARY:
+        var r = float(val.get("r", 1))
+        var g = float(val.get("g", 1))
+        var b = float(val.get("b", 1))
+        var a = float(val.get("a", 1))
+        return Color(r, g, b, a)
+    return Color(1, 1, 1, 1)
+
+# ===== RESOURCE LISTING =====
+
+func list_resources(params):
+    var folder = params.get("folder", "res://")
+    var extensions = params.get("extensions", ["*.tres", "*.tscn", "*.gd", "*.png", "*.jpg", "*.wav", "*.ogg", "*.mp3", "*.glb", "*.gltf"])
+    var recursive = params.get("recursive", true)
+    
+    log_debug("Listing resources in: " + folder)
+    
+    var results = []
+    var abs_folder = _to_absolute(folder)
+    
+    _scan_folder(abs_folder, extensions, recursive, results)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "folder": folder,
+        "count": results.size(),
+        "resources": results
+    }))
+
+func _scan_folder(folder: String, extensions: Array, recursive: bool, results: Array):
+    var dir = DirAccess.open(folder)
+    if dir == null:
+        return
+    
+    dir.list_dir_begin()
+    var file_name = dir.get_next()
+    
+    while file_name != "":
+        if dir.current_is_dir():
+            if recursive and file_name != "." and file_name != ".." and file_name != "mcp_backups":
+                _scan_folder(folder + "/" + file_name, extensions, recursive, results)
+        else:
+            for ext in extensions:
+                var pattern = ext.replace("*", "")
+                if file_name.ends_with(pattern):
+                    var full_path = folder + "/" + file_name
+                    var res_path = full_path.replace("res://", "").replace(_to_absolute("res://"), "res://")
+                    var stat = DirAccess.get_files_at(folder)
+                    results.append({
+                        "name": file_name,
+                        "path": res_path,
+                        "type": _guess_resource_type(file_name)
+                    })
+                    break
+        file_name = dir.get_next()
+    
+    dir.list_dir_end()
+
+func _guess_resource_type(file_name: String) -> String:
+    if file_name.ends_with(".tscn"):
+        return "PackedScene"
+    if file_name.ends_with(".gd"):
+        return "GDScript"
+    if file_name.ends_with(".tres"):
+        return "Resource"
+    if file_name.ends_with(".png") or file_name.ends_with(".jpg") or file_name.ends_with(".jpeg"):
+        return "Image"
+    if file_name.ends_with(".wav") or file_name.ends_with(".ogg") or file_name.ends_with(".mp3"):
+        return "AudioStream"
+    if file_name.ends_with(".glb") or file_name.ends_with(".gltf"):
+        return "Mesh"
+    if file_name.ends_with(".obj"):
+        return "Mesh"
+    return "File"
+
+# ===== RUN SCENE =====
+
+func run_scene(params):
+    var scene_path = params.get("scene_path", "")
+    var headless = params.get("headless", false)
+    
+    log_info("Scene would be run: " + scene_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "scene_path": scene_path,
+        "message": "Use run_project tool to execute scenes"
     }))

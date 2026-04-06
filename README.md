@@ -27,7 +27,7 @@ COMPRESSION_LEVEL=high node build/index.js
 | `DEBUG` | `true`, `false` | `false` | Logs de debug |
 | `GODOT_PATH` | path | auto | Caminho do Godot |
 
-## Ferramentas (36 total)
+## Ferramentas (46 total)
 
 ### Editor
 
@@ -104,6 +104,38 @@ COMPRESSION_LEVEL=high node build/index.js
 |------------|-----------|
 | `get_uid` | Obtém UID |
 | `resave_resources` | Atualiza UIDs |
+
+### Scene & Script
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `instance_scene` | Instancia cena |
+| `create_script` | Cria script |
+| `attach_script` | Anexa script a nó |
+| `edit_script` | Edita script |
+
+### Resources
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_resource` | Cria recurso |
+| `list_resources` | Lista assets |
+
+### 3D Scene
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_scene_3d` | Cria cena 3D |
+| `add_node_3d` | Adiciona nó 3D |
+| `set_node_position_3d` | Posição 3D |
+| `set_node_rotation_3d` | Rotação 3D |
+| `set_node_scale_3d` | Escala 3D |
+
+### Executar
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `run_scene` | Executa cena/projeto |
 
 ## Exemplos
 
@@ -224,6 +256,96 @@ const result = await mcp.call('list_nodes', {
   ],
   "count": 3
 }
+```
+
+### Scripts
+
+```typescript
+// Criar script com template
+await mcp.call('create_script', {
+  projectPath: '/path/to/project',
+  scriptPath: 'scripts/Player.gd',
+  template: 'character'
+});
+
+// Editar script
+await mcp.call('edit_script', {
+  projectPath: '/path/to/project',
+  scriptPath: 'scripts/Player.gd',
+  content: 'extends CharacterBody2D\n\nfunc _ready() -> void:\n\tprint("Hello!")'
+});
+
+// Anexar script a nó existente
+await mcp.call('attach_script', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Main.tscn',
+  nodePath: 'Enemy',
+  scriptPath: 'scripts/EnemyAI.gd'
+});
+```
+
+### Resources
+
+```typescript
+// Criar shape de colisão
+await mcp.call('create_resource', {
+  projectPath: '/path/to/project',
+  type: 'CircleShape2D',
+  path: 'resources/coin_shape.tres',
+  properties: { radius: 16 }
+});
+
+// Criar PhysicsMaterial
+await mcp.call('create_resource', {
+  projectPath: '/path/to/project',
+  type: 'PhysicsMaterial',
+  path: 'resources/bouncy.tres',
+  properties: { friction: 0.5, bounce: 1.0 }
+});
+
+// Listar assets do projeto
+await mcp.call('list_resources', {
+  projectPath: '/path/to/project',
+  extensions: ['*.gd', '*.tscn', '*.tres', '*.png'],
+  recursive: true
+});
+```
+
+### 3D
+
+```typescript
+// Criar cena 3D
+await mcp.call('create_scene_3d', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/World.tscn',
+  rootNodeType: 'Node3D'
+});
+
+// Adicionar nó 3D
+await mcp.call('add_node_3d', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/World.tscn',
+  nodeName: 'Player',
+  nodeType: 'CharacterBody3D',
+  parentNodePath: 'root'
+});
+
+// Posicionar na cena 3D
+await mcp.call('set_node_position_3d', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/World.tscn',
+  nodePath: 'Player',
+  position: { x: 10, y: 5, z: -3 }
+});
+```
+
+### Executar
+
+```typescript
+// Executar projeto
+await mcp.call('run_scene', {
+  projectPath: '/path/to/project'
+});
 ```
 
 ## Otimização de Tokens
