@@ -244,7 +244,8 @@ class GodotMCP {
             { name: 'add_node_with_script', desc: 'Add node with script', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', nodeType: 'string?', scriptPath: 'string', parentNodePath: 'string?' } },
             { name: 'remove_node', desc: 'Remove node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', createBackup: 'boolean?' } },
             { name: 'duplicate_node', desc: 'Duplicate node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newName: 'string', createBackup: 'boolean?' } },
-            { name: 'list_nodes', desc: 'List nodes in scene', props: { projectPath: 'string', scenePath: 'string', fields: 'array?', maxDepth: 'number?', recursive: 'boolean?' } },
+            { name: 'move_node', desc: 'Move/reparent node or reorder within parent', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newParentPath: 'string?', newIndex: 'number?', createBackup: 'boolean?' } },
+            { name: 'list_nodes', desc: 'List nodes in scene. fields: name,type,path,script,children_count,properties (default: name+type+path+script). maxDepth: 0=unlimited.', props: { projectPath: 'string', scenePath: 'string', fields: 'array?', maxDepth: 'number?', recursive: 'boolean?' } },
             { name: 'batch_operations', desc: 'Batch operations', props: { projectPath: 'string', scenePath: 'string', operations: 'array', enableRollback: 'boolean?' } },
             { name: 'load_sprite', desc: 'Load sprite texture', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', texturePath: 'string' } },
             { name: 'save_scene', desc: 'Save scene', props: { projectPath: 'string', scenePath: 'string', newPath: 'string?' } },
@@ -321,6 +322,11 @@ class GodotMCP {
             { name: 'runtime_find_node', desc: 'Find node in running game', props: { projectPath: 'string', pattern: 'string?', type: 'string?' } },
             { name: 'runtime_get_node_info', desc: 'Get node info from running game', props: { projectPath: 'string', nodePath: 'string' } },
             { name: 'runtime_start_debug', desc: 'Start game with debug server', props: { projectPath: 'string', scenePath: 'string?' } },
+            // UI Layout
+            { name: 'set_layout', desc: 'Set UI layout (anchors, offsets, size) in one call', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', layout: 'object', createBackup: 'boolean?' } },
+            { name: 'apply_layout_preset', desc: 'Apply named layout preset (top_bar, bottom_right, full_rect, etc)', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', preset: 'string', createBackup: 'boolean?' } },
+            { name: 'copy_layout', desc: 'Copy layout from one node to another', props: { projectPath: 'string', scenePath: 'string', fromNode: 'string', toNode: 'string', createBackup: 'boolean?' } },
+            { name: 'list_layout_presets', desc: 'List available layout presets', props: {} },
         ];
         this.toolDefinitions = baseTools;
         const getTools = () => {
@@ -362,6 +368,7 @@ class GodotMCP {
                 case 'attach_script': return this.handleAttachScript(args);
                 case 'remove_node': return this.handleRemoveNode(args);
                 case 'duplicate_node': return this.handleDuplicateNode(args);
+                case 'move_node': return this.handleMoveNode(args);
                 case 'list_nodes': return this.handleListNodes(args);
                 case 'batch_operations': return this.handleBatchOperations(args);
                 case 'load_sprite': return this.handleLoadSprite(args);
@@ -439,6 +446,10 @@ class GodotMCP {
                 case 'runtime_find_node': return this.handleRuntimeFindNode(args);
                 case 'runtime_get_node_info': return this.handleRuntimeGetNodeInfo(args);
                 case 'runtime_start_debug': return this.handleRuntimeStartDebug(args);
+                case 'set_layout': return this.handleSetLayout(args);
+                case 'apply_layout_preset': return this.handleApplyLayoutPreset(args);
+                case 'copy_layout': return this.handleCopyLayout(args);
+                case 'list_layout_presets': return this.handleListLayoutPresets();
                 default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
             }
         });
@@ -449,7 +460,10 @@ class GodotMCP {
             description: desc,
             inputSchema: {
                 type: 'object',
-                properties: Object.fromEntries(Object.entries(props).map(([k, v]) => [k, { type: String(v).endsWith('?') ? String(v).slice(0, -1) : String(v), description: k }])),
+                properties: Object.fromEntries(Object.entries(props).map(([k, v]) => {
+                    const t = String(v).endsWith('?') ? String(v).slice(0, -1) : String(v);
+                    return [k, t === 'unknown' ? { description: k } : { type: t, description: k }];
+                })),
                 required: Object.entries(props).filter(([, v]) => !String(v).endsWith('?')).map(([k]) => k)
             }
         };
@@ -608,7 +622,7 @@ class GodotMCP {
         }
         const { stdout, stderr } = await this.executeOp('attach_script', {
             scene_path: args.scenePath, node_path: args.nodePath,
-            script_path: args.scriptPath, create_backup: args.createBackup !== false
+            script_path: args.scriptPath, create_backup: !!args.createBackup
         }, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
@@ -620,7 +634,7 @@ class GodotMCP {
         }
         const { stdout, stderr } = await this.executeOp('modify_node_property', {
             scene_path: args.scenePath, node_path: args.nodePath,
-            property: args.property, value: args.value, create_backup: args.createBackup !== false
+            property: args.property, value: args.value, create_backup: !!args.createBackup
         }, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
@@ -631,7 +645,7 @@ class GodotMCP {
             return this.error('Missing required params');
         }
         const { stdout, stderr } = await this.executeOp('remove_node', {
-            scene_path: args.scenePath, node_path: args.nodePath, create_backup: args.createBackup !== false
+            scene_path: args.scenePath, node_path: args.nodePath, create_backup: !!args.createBackup
         }, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
@@ -643,11 +657,35 @@ class GodotMCP {
         }
         const { stdout, stderr } = await this.executeOp('duplicate_node', {
             scene_path: args.scenePath, node_path: args.nodePath,
-            new_name: args.newName, create_backup: args.createBackup !== false
+            new_name: args.newName, create_backup: !!args.createBackup
         }, args.projectPath);
         if (stderr.includes('[ERROR]'))
             return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: `Node duplicated as ${args.newName}\n${stdout}` }] };
+    }
+    async handleMoveNode(args) {
+        if (!args.projectPath || !args.scenePath || !args.nodePath) {
+            return this.error('Missing required params: projectPath, scenePath, nodePath');
+        }
+        const { stdout, stderr } = await this.executeOp('move_node', {
+            scene_path: args.scenePath,
+            node_path: args.nodePath,
+            new_parent_path: args.newParentPath ?? '',
+            new_index: args.newIndex ?? -1,
+            create_backup: !!args.createBackup,
+        }, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                return { content: [{ type: 'text', text: `Node moved: ${JSON.stringify(JSON.parse(mcpMatch[1]))}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
     }
     async handleListNodes(args) {
         if (!args.projectPath || !args.scenePath)
@@ -826,7 +864,7 @@ class GodotMCP {
             script_path: args.scriptPath,
             content: args.content,
             append: args.append || false,
-            create_backup: args.createBackup !== false
+            create_backup: !!args.createBackup
         };
         const { stdout, stderr } = await this.executeOp('edit_script', params, args.projectPath);
         if (stderr.includes('[ERROR]'))
@@ -1215,6 +1253,115 @@ class GodotMCP {
             this.activeProcess = null; });
         this.activeProcess = { process: proc, output, errors };
         return { content: [{ type: 'text', text: 'Game started with debug server on port 9090. Wait a moment for it to load, then use runtime tools.' }] };
+    }
+    LAYOUT_PRESETS = {
+        'full_rect': { anchors_preset: 15 },
+        'top_bar': { anchors_preset: 10, offset_top: 0, offset_bottom: 80 },
+        'bottom_bar': { anchors_preset: 11, offset_top: -80, offset_bottom: 0 },
+        'left_panel': { anchors_preset: 9, offset_left: 0, offset_right: 250 },
+        'right_panel': { anchors_preset: 11, offset_left: -250, offset_right: 0 },
+        'center': { anchors_preset: 8 },
+        'top_left': { anchors_preset: 0 },
+        'top_right': { anchors_preset: 1 },
+        'bottom_left': { anchors_preset: 4 },
+        'bottom_right': { anchors_preset: 5 },
+        'top_wide': { anchors_preset: 10, offset_top: 0, offset_bottom: 60 },
+        'bottom_wide': { anchors_preset: 11, offset_top: -60, offset_bottom: 0 },
+    };
+    async handleSetLayout(args) {
+        if (!args.projectPath || !args.scenePath || !args.nodePath || !args.layout) {
+            return this.error('Missing required params: projectPath, scenePath, nodePath, layout');
+        }
+        const params = {
+            scene_path: args.scenePath,
+            node_path: args.nodePath,
+            layout: args.layout,
+            create_backup: !!args.createBackup
+        };
+        const { stdout, stderr } = await this.executeOp('set_layout', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                return { content: [{ type: 'text', text: `Layout set: ${JSON.stringify(data)}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleApplyLayoutPreset(args) {
+        if (!args.projectPath || !args.scenePath || !args.nodePath || !args.preset) {
+            return this.error('Missing required params: projectPath, scenePath, nodePath, preset');
+        }
+        const presetName = args.preset;
+        const preset = this.LAYOUT_PRESETS[presetName];
+        if (!preset) {
+            return this.error(`Unknown preset: ${presetName}. Use list_layout_presets to see available.`);
+        }
+        const params = {
+            scene_path: args.scenePath,
+            node_path: args.nodePath,
+            layout: preset,
+            create_backup: !!args.createBackup
+        };
+        const { stdout, stderr } = await this.executeOp('set_layout', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        return { content: [{ type: 'text', text: `Applied preset '${presetName}': ${stdout}` }] };
+    }
+    async handleCopyLayout(args) {
+        if (!args.projectPath || !args.scenePath || !args.fromNode || !args.toNode) {
+            return this.error('Missing required params: projectPath, scenePath, fromNode, toNode');
+        }
+        // First get layout from source node
+        const getParams = { scene_path: args.scenePath, node_path: args.fromNode };
+        const { stdout } = await this.executeOp('get_node_info', getParams, args.projectPath);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (!mcpMatch) {
+            return this.error('Could not get source node info');
+        }
+        let nodeInfo;
+        try {
+            nodeInfo = JSON.parse(mcpMatch[1]);
+        }
+        catch {
+            return this.error('Failed to parse node info');
+        }
+        // Extract layout properties
+        const layoutProps = nodeInfo.properties || {};
+        const layout = {};
+        const layoutKeys = ['anchors_preset', 'offset_left', 'offset_top', 'offset_right', 'offset_bottom', 'custom_minimum_size', 'size_flags_horizontal', 'size_flags_vertical', 'layout_mode'];
+        for (const key of layoutKeys) {
+            if (layoutProps[key] !== undefined) {
+                layout[key] = layoutProps[key];
+            }
+        }
+        // Apply to target node
+        const setParams = {
+            scene_path: args.scenePath,
+            node_path: args.toNode,
+            layout: layout,
+            create_backup: !!args.createBackup
+        };
+        const { stdout: setStdout, stderr } = await this.executeOp('set_layout', setParams, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        return { content: [{ type: 'text', text: `Layout copied from ${args.fromNode} to ${args.toNode}` }] };
+    }
+    handleListLayoutPresets() {
+        const presets = Object.entries(this.LAYOUT_PRESETS).map(([name, config]) => ({
+            name,
+            config
+        }));
+        let message = 'Available Layout Presets:\n\n';
+        for (const p of presets) {
+            message += `**${p.name}**: ${JSON.stringify(p.config)}\n`;
+        }
+        return { content: [{ type: 'text', text: message }] };
     }
     async cleanup() {
         if (this.activeProcess)

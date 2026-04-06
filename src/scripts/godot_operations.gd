@@ -95,6 +95,8 @@ func _init():
         "execute_gdscript": execute_gdscript(params)
         "snapshot_scene": snapshot_scene(params)
         "compare_scenes": compare_scenes(params)
+        "set_layout": set_layout(params)
+        "move_node": move_node(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -384,7 +386,7 @@ func attach_script(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var script_path = _normalize_path(params.script_path)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Attaching script '" + script_path + "' to node '" + node_path + "'")
     
@@ -424,7 +426,7 @@ func modify_node_property(params):
     var node_path = params.node_path
     var property = params.property
     var value = params.value
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Modifying property '" + property + "' on node '" + node_path + "'")
     
@@ -471,7 +473,7 @@ func modify_node_property(params):
 func remove_node(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Removing node: " + node_path)
     
@@ -517,7 +519,7 @@ func duplicate_node(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var new_name = params.new_name
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Duplicating node: " + node_path + " as " + new_name)
     
@@ -557,50 +559,116 @@ func duplicate_node(params):
     if backup_path != "": _cleanup_backup(backup_path)
     log_info("Node duplicated as '" + new_name + "' in '" + scene_path + "'")
 
-func _collect_node_info(node: Node, prefix: String):
-    var node_info = {
-        "name": node.name,
-        "type": node.get_class(),
-        "path": prefix + node.name
-    }
-    
-    if node.get_script() != null:
+func move_node(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var new_parent_path = params.get("new_parent_path", "")
+    var new_index = params.get("new_index", -1)
+    var create_backup = params.get("create_backup", false)
+
+    log_debug("Moving node: " + node_path)
+
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+
+    var old_parent = target.get_parent()
+    var result_info = {"node": node_path}
+
+    if new_parent_path != "" and new_parent_path != node_path:
+        var new_parent = _find_node_by_path(root, new_parent_path)
+        if new_parent == null:
+            printerr("[ERROR] New parent not found: " + new_parent_path)
+            if backup_path != "": _cleanup_backup(backup_path)
+            quit(1)
+        old_parent.remove_child(target)
+        new_parent.add_child(target)
+        target.owner = root
+        # Recursively reassign owners for all children
+        _reassign_owners(target, root)
+        result_info["reparented_to"] = new_parent_path
+
+    if new_index >= 0:
+        var parent = target.get_parent()
+        parent.move_child(target, new_index)
+        result_info["new_index"] = new_index
+
+    if _save_packed_scene(root, scene_path) != OK:
+        if backup_path != "": _restore_backup(scene_path, backup_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        printerr("[ERROR] Failed to save scene")
+        quit(1)
+
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Node moved: " + node_path)
+    print("MCP_RESULT:" + JSON.stringify(result_info))
+
+func _reassign_owners(node: Node, root: Node):
+    for child in node.get_children():
+        child.owner = root
+        _reassign_owners(child, root)
+
+func _collect_node_info(node: Node, prefix: String, fields: Array, depth: int, max_depth: int):
+    var node_info = {}
+    var path = prefix + node.name
+
+    if fields.is_empty() or "name" in fields:
+        node_info["name"] = node.name
+    if fields.is_empty() or "type" in fields:
+        node_info["type"] = node.get_class()
+    if fields.is_empty() or "path" in fields:
+        node_info["path"] = path
+    if ("script" in fields or fields.is_empty()) and node.get_script() != null:
         node_info["script"] = node.get_script().resource_path
-    
-    var exported_props = []
-    for prop in node.get_property_list():
-        if prop.usage & PROPERTY_USAGE_STORAGE:
-            exported_props.append({
-                "name": prop.name,
-                "type": prop.type
-            })
-    
-    if exported_props.size() > 0:
+    if "children_count" in fields:
+        node_info["children_count"] = node.get_child_count()
+    if "properties" in fields:
+        var exported_props = []
+        for prop in node.get_property_list():
+            if prop.usage & PROPERTY_USAGE_STORAGE:
+                exported_props.append({"name": prop.name, "type": prop.type})
         node_info["properties"] = exported_props
-    
+
     _nodes_collector.append(node_info)
-    
-    if _collect_recursive:
+
+    if _collect_recursive and (max_depth <= 0 or depth < max_depth):
         for child in node.get_children():
-            _collect_node_info(child, prefix + node.name + "/")
+            _collect_node_info(child, path + "/", fields, depth + 1, max_depth)
 
 func list_nodes(params):
     var scene_path = _normalize_path(params.scene_path)
     _collect_recursive = params.get("recursive", true)
-    
+    var max_depth = params.get("max_depth", 0)  # 0 = unlimited
+    var fields = params.get("fields", [])        # [] = default (name, type, path, script)
+
     log_debug("Listing nodes in: " + scene_path)
-    
+
     var scene = load(scene_path)
     if scene == null:
         printerr("[ERROR] Failed to load scene")
         quit(1)
-    
+
     var root = scene.instantiate()
     _nodes_collector = []
-    
-    _collect_node_info(root, "root/")
-    
-    # Use print instead of log_info to avoid [INFO] prefix
+
+    _collect_node_info(root, "", fields, 0, max_depth)
+
     print("MCP_RESULT:" + JSON.stringify({"nodes": _nodes_collector, "count": _nodes_collector.size()}))
 
 func batch_operations(params):
@@ -747,6 +815,57 @@ func _execute_operation(root: Node, op_type: String, params: Dictionary) -> bool
                 target.set_script(script)
                 return true
             return false
+        
+        "set_property":
+            var node_path = params.get("node_path", "")
+            var prop = params.get("property", "")
+            var value = params.get("value", null)
+            
+            var target = _find_node_by_path(root, node_path)
+            if target == null:
+                return false
+            
+            if typeof(value) == TYPE_STRING and value.begins_with("res://"):
+                value = load(value)
+            
+            if typeof(value) == TYPE_DICTIONARY:
+                value = _deserialize_value(value, target, prop)
+            
+            target.set(prop, value)
+            return true
+        
+        "set_layout":
+            var node_path = params.get("node_path", "")
+            var layout = params.get("layout", {})
+            
+            var target = _find_node_by_path(root, node_path)
+            if target == null:
+                return false
+            
+            if layout.has("anchors_preset"):
+                target.anchors_preset = int(layout.anchors_preset)
+            if layout.has("offset_left"):
+                target.offset_left = int(layout.offset_left)
+            if layout.has("offset_top"):
+                target.offset_top = int(layout.offset_top)
+            if layout.has("offset_right"):
+                target.offset_right = int(layout.offset_right)
+            if layout.has("offset_bottom"):
+                target.offset_bottom = int(layout.offset_bottom)
+            if layout.has("custom_minimum_size"):
+                var size = layout.custom_minimum_size
+                if typeof(size) == TYPE_DICTIONARY:
+                    target.custom_minimum_size = Vector2(float(size.get("x", 0)), float(size.get("y", 0)))
+                else:
+                    target.custom_minimum_size = size
+            if layout.has("size_flags_horizontal"):
+                target.size_flags_horizontal = int(layout.size_flags_horizontal)
+            if layout.has("size_flags_vertical"):
+                target.size_flags_vertical = int(layout.size_flags_vertical)
+            if layout.has("layout_mode"):
+                target.layout_mode = int(layout.layout_mode)
+            
+            return true
         
         _:
             log_debug("Unknown batch operation: " + op_type)
@@ -1013,7 +1132,7 @@ func set_node_property(params):
     var node_path = params.node_path
     var property = params.property
     var value = params.value
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1056,6 +1175,86 @@ func set_node_property(params):
     log_info("Property '" + property + "' set on '" + node_path + "'")
     print("MCP_RESULT:" + JSON.stringify({"success": true, "property": property, "value": _serialize_value(value)}))
 
+func set_layout(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var layout = params.layout
+    var create_backup = params.get("create_backup", false)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var root = _load_scene_for_node(params)
+    if root == null:
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var changes = []
+    
+    if layout.has("anchors_preset"):
+        target.anchors_preset = int(layout.anchors_preset)
+        changes.append("anchors_preset=" + str(layout.anchors_preset))
+    if layout.has("anchor_left"):
+        target.anchor_left = float(layout.anchor_left)
+        changes.append("anchor_left=" + str(layout.anchor_left))
+    if layout.has("anchor_top"):
+        target.anchor_top = float(layout.anchor_top)
+        changes.append("anchor_top=" + str(layout.anchor_top))
+    if layout.has("anchor_right"):
+        target.anchor_right = float(layout.anchor_right)
+        changes.append("anchor_right=" + str(layout.anchor_right))
+    if layout.has("anchor_bottom"):
+        target.anchor_bottom = float(layout.anchor_bottom)
+        changes.append("anchor_bottom=" + str(layout.anchor_bottom))
+    if layout.has("offset_left"):
+        target.offset_left = int(layout.offset_left)
+        changes.append("offset_left=" + str(layout.offset_left))
+    if layout.has("offset_top"):
+        target.offset_top = int(layout.offset_top)
+        changes.append("offset_top=" + str(layout.offset_top))
+    if layout.has("offset_right"):
+        target.offset_right = int(layout.offset_right)
+        changes.append("offset_right=" + str(layout.offset_right))
+    if layout.has("offset_bottom"):
+        target.offset_bottom = int(layout.offset_bottom)
+        changes.append("offset_bottom=" + str(layout.offset_bottom))
+    if layout.has("custom_minimum_size"):
+        var size = layout.custom_minimum_size
+        if typeof(size) == TYPE_DICTIONARY:
+            target.custom_minimum_size = Vector2(float(size.get("x", 0)), float(size.get("y", 0)))
+        else:
+            target.custom_minimum_size = size
+        changes.append("custom_minimum_size=" + str(target.custom_minimum_size))
+    if layout.has("size_flags_horizontal"):
+        target.size_flags_horizontal = int(layout.size_flags_horizontal)
+        changes.append("size_flags_horizontal=" + str(layout.size_flags_horizontal))
+    if layout.has("size_flags_vertical"):
+        target.size_flags_vertical = int(layout.size_flags_vertical)
+        changes.append("size_flags_vertical=" + str(layout.size_flags_vertical))
+    if layout.has("layout_mode"):
+        target.layout_mode = int(layout.layout_mode)
+        changes.append("layout_mode=" + str(layout.layout_mode))
+    
+    if _save_packed_scene(root, scene_path) != OK:
+        if backup_path != "": _restore_backup(scene_path, backup_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        printerr("[ERROR] Failed to save scene")
+        quit(1)
+    
+    if backup_path != "": _cleanup_backup(backup_path)
+    log_info("Layout set on '" + node_path + "': " + ", ".join(changes))
+    print("MCP_RESULT:" + JSON.stringify({"success": true, "node": node_path, "changes": changes}))
+
 # ===== TRANSFORM OPERATIONS =====
 
 func get_node_transform(params):
@@ -1091,7 +1290,7 @@ func set_node_position(params):
     var node_path = params.node_path
     var position = params.position
     var global = params.get("global", false)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1134,7 +1333,7 @@ func set_node_rotation(params):
     var node_path = params.node_path
     var rotation = params.rotation
     var global = params.get("global", false)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1172,7 +1371,7 @@ func set_node_scale(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var scale = params.scale
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1283,7 +1482,7 @@ func connect_signal(params):
     var signal_name = params.signal
     var to_node_path = params.to_node
     var method_name = params.method
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1330,7 +1529,7 @@ func disconnect_signal(params):
     var signal_name = params.signal
     var to_node_path = params.to_node
     var method_name = params.method
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1411,7 +1610,7 @@ func add_to_group(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var group_name = params.group
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1444,7 +1643,7 @@ func remove_from_group(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var group_name = params.group
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     var backup_path = ""
     if create_backup:
@@ -1534,29 +1733,38 @@ func _serialize_value(value: Variant) -> Dictionary:
     return result
 
 func _deserialize_value(data, node: Node, property: String) -> Variant:
-    if typeof(data) == TYPE_DICTIONARY and data.has("type") and data.has("value"):
-        var type_id = int(data.type)
-        var value = data.value
-        
-        match type_id:
-            TYPE_BOOL: return bool(value)
-            TYPE_INT: return int(value)
-            TYPE_FLOAT: return float(value)
-            TYPE_STRING: return str(value)
-            TYPE_VECTOR2:
-                return Vector2(float(value.x), float(value.y))
-            TYPE_VECTOR2I:
-                return Vector2i(int(value.x), int(value.y))
-            TYPE_VECTOR3:
-                return Vector3(float(value.x), float(value.y), float(value.z))
-            TYPE_VECTOR3I:
-                return Vector3i(int(value.x), int(value.y), int(value.z))
-            TYPE_COLOR:
-                return Color(float(value.r), float(value.g), float(value.b), float(value.get("a", 1.0)))
-            TYPE_NODE_PATH:
-                return NodePath(str(value))
-            _:
-                return value
+    if typeof(data) == TYPE_DICTIONARY:
+        # Check for Color with r, g, b, a keys (direct format)
+        if data.has("r") and data.has("g") and data.has("b"):
+            var r = float(data.get("r", 1.0))
+            var g = float(data.get("g", 1.0))
+            var b = float(data.get("b", 1.0))
+            var a = float(data.get("a", 1.0))
+            return Color(r, g, b, a)
+        # Check for wrapped format with type and value
+        if data.has("type") and data.has("value"):
+            var type_id = int(data.type)
+            var value = data.value
+            
+            match type_id:
+                TYPE_BOOL: return bool(value)
+                TYPE_INT: return int(value)
+                TYPE_FLOAT: return float(value)
+                TYPE_STRING: return str(value)
+                TYPE_VECTOR2:
+                    return Vector2(float(value.x), float(value.y))
+                TYPE_VECTOR2I:
+                    return Vector2i(int(value.x), int(value.y))
+                TYPE_VECTOR3:
+                    return Vector3(float(value.x), float(value.y), float(value.z))
+                TYPE_VECTOR3I:
+                    return Vector3i(int(value.x), int(value.y), int(value.z))
+                TYPE_COLOR:
+                    return Color(float(value.r), float(value.g), float(value.b), float(value.get("a", 1.0)))
+                TYPE_NODE_PATH:
+                    return NodePath(str(value))
+                _:
+                    return value
     return data
 
 func _parse_vector(data, components: int):
@@ -1581,7 +1789,7 @@ func instance_scene(params):
     var parent_node_path = params.get("parent_node_path", "root")
     var node_name = params.get("node_name", "")
     var position = params.get("position", null)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Instantiating " + source_scene_path + " into " + target_scene_path)
     
@@ -1724,7 +1932,7 @@ func create_script(params):
 func edit_script(params):
     var script_path = _normalize_path(params.script_path)
     var content = params.get("content", "")
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     var append_mode = params.get("append", false)
     
     log_debug("Editing script: " + script_path)
@@ -1845,7 +2053,7 @@ func set_node_position_3d(params):
     var node_path = params.node_path
     var position = params.position
     var global = params.get("global", false)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Setting 3D position of '" + node_path + "'")
     
@@ -1889,7 +2097,7 @@ func set_node_rotation_3d(params):
     var node_path = params.node_path
     var rotation = params.rotation
     var global = params.get("global", false)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Setting 3D rotation of '" + node_path + "'")
     
@@ -1929,7 +2137,7 @@ func set_node_scale_3d(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var scale = params.scale
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Setting 3D scale of '" + node_path + "'")
     
@@ -2145,7 +2353,7 @@ func assign_node_resource(params):
     var property = params.get("property", "shape")
     var resource_type = params.resource_type
     var resource_properties = params.get("resource_properties", {})
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
 
     log_debug("Assigning " + resource_type + " to " + node_path + "." + property)
 
@@ -2521,7 +2729,7 @@ func add_collision_layer(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var layer = int(params.layer or 1)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Adding collision layer " + str(layer) + " to " + node_path)
     
@@ -2567,7 +2775,7 @@ func set_collision_mask(params):
     var scene_path = _normalize_path(params.scene_path)
     var node_path = params.node_path
     var mask = int(params.mask or 1)
-    var create_backup = params.get("create_backup", true)
+    var create_backup = params.get("create_backup", false)
     
     log_debug("Setting collision mask " + str(mask) + " on " + node_path)
     
