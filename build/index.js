@@ -273,6 +273,9 @@ class GodotMCP {
             // UID
             { name: 'get_uid', desc: 'Get UID for file', props: { projectPath: 'string', filePath: 'string' } },
             { name: 'resave_resources', desc: 'Resave resources', props: { projectPath: 'string?' } },
+            // Scene & Script
+            { name: 'instance_scene', desc: 'Instance scene', props: { projectPath: 'string', targetScenePath: 'string', sourceScenePath: 'string', parentNodePath: 'string?', nodeName: 'string?', position: 'object?' } },
+            { name: 'create_script', desc: 'Create script', props: { projectPath: 'string', scriptPath: 'string', className: 'string?', extends: 'string?', template: 'string?' } },
         ];
         this.toolDefinitions = baseTools;
         const getTools = () => {
@@ -342,6 +345,9 @@ class GodotMCP {
                 // UID
                 case 'get_uid': return this.handleGetUid(args);
                 case 'resave_resources': return this.handleResaveResources(args);
+                // Scene & Script
+                case 'instance_scene': return this.handleInstanceScene(args);
+                case 'create_script': return this.handleCreateScript(args);
                 default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
             }
         });
@@ -667,6 +673,44 @@ class GodotMCP {
     async handleResaveResources(args) {
         const projectPath = args.projectPath || '';
         const { stdout } = await this.executeOp('resave_resources', { project_path: projectPath }, projectPath || '.');
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleInstanceScene(args) {
+        if (!args.projectPath || !args.targetScenePath || !args.sourceScenePath) {
+            return this.error('Missing required params: projectPath, targetScenePath, sourceScenePath');
+        }
+        const params = {
+            target_scene_path: args.targetScenePath,
+            source_scene_path: args.sourceScenePath,
+        };
+        if (args.parentNodePath)
+            params.parent_node_path = args.parentNodePath;
+        if (args.nodeName)
+            params.node_name = args.nodeName;
+        if (args.position)
+            params.position = args.position;
+        const { stdout, stderr } = await this.executeOp('instance_scene', params, args.projectPath);
+        if (stderr.includes('ERROR'))
+            return this.error(`Failed: ${stderr}`);
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleCreateScript(args) {
+        if (!args.projectPath || !args.scriptPath) {
+            return this.error('Missing required params: projectPath, scriptPath');
+        }
+        const params = {
+            project_path: args.projectPath,
+            script_path: args.scriptPath,
+        };
+        if (args.className)
+            params.class_name = args.className;
+        if (args.extends)
+            params.extends = args.extends;
+        if (args.template)
+            params.template = args.template;
+        const { stdout, stderr } = await this.executeOp('create_script', params, args.projectPath);
+        if (stderr.includes('ERROR'))
+            return this.error(`Failed: ${stderr}`);
         return { content: [{ type: 'text', text: stdout }] };
     }
     async cleanup() {

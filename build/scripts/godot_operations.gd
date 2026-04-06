@@ -67,6 +67,8 @@ func _init():
         "add_to_group": add_to_group(params)
         "remove_from_group": remove_from_group(params)
         "call_group_method": call_group_method(params)
+        "instance_scene": instance_scene(params)
+        "create_script": create_script(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -1487,3 +1489,151 @@ func _parse_vector(data, components: int):
             if data.has("x") and data.has("y") and data.has("z"):
                 return Vector3(float(data.x), float(data.y), float(data.z))
     return null
+
+# ===== SCENE INSTANTIATION =====
+
+func instance_scene(params):
+    var target_scene_path = _normalize_path(params.target_scene_path)
+    var source_scene_path = _normalize_path(params.source_scene_path)
+    var parent_node_path = params.get("parent_node_path", "root")
+    var node_name = params.get("node_name", "")
+    var position = params.get("position", null)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Instantiating " + source_scene_path + " into " + target_scene_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(target_scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var target_scene = load(target_scene_path)
+    if target_scene == null:
+        printerr("[ERROR] Failed to load target scene: " + target_scene_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = target_scene.instantiate()
+    
+    var parent = _find_node_by_path(root, parent_node_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var source_scene = load(source_scene_path)
+    if source_scene == null:
+        printerr("[ERROR] Failed to load source scene: " + source_scene_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var instance = source_scene.instantiate()
+    var instance_name = node_name if node_name != "" else source_scene_path.get_file().replace(".tscn", "")
+    instance.name = instance_name
+    
+    if position != null:
+        var pos = _parse_vector(position, 2)
+        if pos != null and instance.has_method("set_position"):
+            instance.set_position(pos)
+    
+    parent.add_child(instance)
+    instance.owner = root
+    
+    if _save_packed_scene(root, target_scene_path) != OK:
+        printerr("[ERROR] Failed to save scene")
+        if backup_path != "": _restore_backup(target_scene_path, backup_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "instance_name": instance_name,
+        "source_scene": source_scene_path,
+        "target_scene": target_scene_path,
+        "parent": parent_node_path
+    }))
+
+# ===== SCRIPT CREATION =====
+
+func create_script(params):
+    var project_path = params.get("project_path", "res://")
+    if not project_path.begins_with("res://"):
+        project_path = "res://" + project_path
+    
+    var script_path = _normalize_path(params.script_path)
+    var cls_name = params.get("class_name", "")
+    var extends_type = params.get("extends", "Node")
+    var template = params.get("template", "node")
+    
+    log_debug("Creating script: " + script_path)
+    
+    var abs_path = _to_absolute(script_path)
+    var script_dir = abs_path.get_base_dir()
+    
+    var dir = DirAccess.open(abs_path.get_base_dir().replace("res://", ""))
+    if dir == null:
+        var parent_dir = DirAccess.open("res://")
+        if parent_dir != null:
+            var rel_path = script_path.replace("res://", "").get_base_dir()
+            parent_dir.make_dir_recursive(rel_path)
+    
+    var script_template = ""
+    
+    match template:
+        "node":
+            script_template = 'extends ' + extends_type + '\n\n' + \
+                'func _ready() -> void:\n' + \
+                '\tpass\n\n' + \
+                'func _process(delta: float) -> void:\n' + \
+                '\tpass\n'
+        "character":
+            script_template = 'extends CharacterBody2D\n\n' + \
+                'const SPEED: float = 300.0\n' + \
+                'const JUMP_VELOCITY: float = -400.0\n\n' + \
+                'var gravity: int = ProjectSettings.get_setting("physics/2d/default_gravity")\n\n' + \
+                'func _ready() -> void:\n' + \
+                '\tpass\n\n' + \
+                'func _physics_process(delta: float) -> void:\n' + \
+                '\t# Add gravity\n' + \
+                '\tif not is_on_floor():\n' + \
+                '\t\tvelocity.y += gravity * delta\n\n' + \
+                '\t# Handle jump\n' + \
+                '\tif Input.is_action_just_pressed("ui_accept") and is_on_floor():\n' + \
+                '\t\tvelocity.y = JUMP_VELOCITY\n\n' + \
+                '\t# Get input direction\n' + \
+                '\tvar input_dir: float = Input.get_axis("ui_left", "ui_right")\n' + \
+                '\tvelocity.x = input_dir * SPEED\n\n' + \
+                '\tmove_and_slide()\n'
+        "area":
+            script_template = 'extends Area2D\n\n' + \
+                'signal body_entered(body: Node2D)\n\n' + \
+                'func _ready() -> void:\n' + \
+                '\tbody_entered.connect(_on_body_entered)\n\n' + \
+                'func _on_body_entered(body: Node2D) -> void:\n' + \
+                '\tprint("Body entered: ", body.name)\n'
+        "resource":
+            script_template = 'extends Resource\n\n' + \
+                'class_name ' + (cls_name if cls_name != "" else "MyResource") + '\n\n' + \
+                '# Export variables\n'
+        _:
+            script_template = 'extends ' + extends_type + '\n\n' + \
+                '# ' + cls_name + '\n\n' + \
+                'func _ready() -> void:\n' + \
+                '\tpass\n'
+    
+    var file = FileAccess.open(abs_path, FileAccess.WRITE)
+    if file == null:
+        printerr("[ERROR] Failed to create script file: " + abs_path)
+        quit(1)
+    
+    file.store_string(script_template)
+    file.close()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "script_path": script_path,
+        "template": template,
+        "extends": extends_type
+    }))
