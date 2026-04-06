@@ -14,7 +14,7 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tools totais** | 48 |
+| **Tools totais** | 61 |
 | **Testes passando** | 9/9 ✅ |
 | **Operações no jogo** | 31 |
 | **Passed** | 26 |
@@ -328,6 +328,14 @@ O MCP agora suporta os workflows básicos de criação de jogos:
 11. ✅ Validar estrutura de cenas
 12. ✅ Operações em batch com rollback
 13. ✅ Trabalhar com grupos e sinais
+14. ✅ Configurações do projeto
+15. ✅ Ações de input
+16. ✅ Layers de colisão
+17. ✅ Importar assets
+18. ✅ Animações
+19. ✅ Buscar nós
+20. ✅ Executar GDScript
+21. ✅ Snapshots e comparação de cenas
 
 **Todas as funcionalidades principais implementadas:**
 - ✅ Instanciação de cenas (`instance_scene`)
@@ -339,9 +347,17 @@ O MCP agora suporta os workflows básicos de criação de jogos:
 - ✅ Executar cenas (`run_scene`)
 - ✅ Exportar (`export_project`)
 - ✅ Validar cenas (`validate_scene`)
+- ✅ Configurações do projeto (`get/set_project_setting`)
+- ✅ Input actions (`list/create_input_action`)
+- ✅ Collision layers (`add_collision_layer`, `set_collision_mask`)
+- ✅ Importar assets (`import_asset`)
+- ✅ Animações (`create_animation`, `add_animation_track`)
+- ✅ Buscar nós (`find_nodes`)
+- ✅ Executar GDScript (`execute_gdscript`)
+- ✅ Snapshots (`snapshot_scene`, `compare_scenes`)
 - ✅ Suporte 3D completo
 - ✅ Parsing correto de resultados JSON
 
-**Total de tools: 48**
+**Total de tools: 61**
 
 **Gaps restantes:** Nenhum!

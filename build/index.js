@@ -289,6 +289,27 @@ class GodotMCP {
             { name: 'set_node_scale_3d', desc: 'Set 3D scale', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', scale: 'object', createBackup: 'boolean?' } },
             { name: 'export_project', desc: 'Export project', props: { projectPath: 'string', preset: 'string?', outputPath: 'string?', debug: 'boolean?' } },
             { name: 'validate_scene', desc: 'Validate scene', props: { projectPath: 'string', scenePath: 'string' } },
+            // Project Settings
+            { name: 'get_project_setting', desc: 'Get project setting', props: { projectPath: 'string', setting: 'string', default: 'unknown?' } },
+            { name: 'set_project_setting', desc: 'Set project setting', props: { projectPath: 'string', setting: 'string', value: 'unknown', save: 'boolean?' } },
+            // Input
+            { name: 'list_input_actions', desc: 'List input actions', props: { projectPath: 'string' } },
+            { name: 'create_input_action', desc: 'Create input action', props: { projectPath: 'string', action: 'string', events: 'array?' } },
+            // Collision
+            { name: 'add_collision_layer', desc: 'Add collision layer', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', layer: 'number', createBackup: 'boolean?' } },
+            { name: 'set_collision_mask', desc: 'Set collision mask', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', mask: 'number', createBackup: 'boolean?' } },
+            // Assets
+            { name: 'import_asset', desc: 'Import asset', props: { projectPath: 'string', sourcePath: 'string', destPath: 'string', type: 'string?' } },
+            // Animation
+            { name: 'create_animation', desc: 'Create animation', props: { projectPath: 'string', scenePath: 'string', animationName: 'string', duration: 'number?', loop: 'boolean?', animPlayerPath: 'string?' } },
+            { name: 'add_animation_track', desc: 'Add animation track', props: { projectPath: 'string', scenePath: 'string', animationName: 'string', nodePath: 'string', property: 'string', keyframes: 'array', animPlayerPath: 'string?' } },
+            // Find
+            { name: 'find_nodes', desc: 'Find nodes', props: { projectPath: 'string', scenePath: 'string', type: 'string?', namePattern: 'string?', recursive: 'boolean?' } },
+            // Script
+            { name: 'execute_gdscript', desc: 'Execute GDScript', props: { projectPath: 'string', script: 'string', scenePath: 'string?' } },
+            // Snapshot
+            { name: 'snapshot_scene', desc: 'Snapshot scene', props: { projectPath: 'string', scenePath: 'string', outputPath: 'string?' } },
+            { name: 'compare_scenes', desc: 'Compare scenes', props: { projectPath: 'string', sceneA: 'string', sceneB: 'string' } },
         ];
         this.toolDefinitions = baseTools;
         const getTools = () => {
@@ -375,6 +396,27 @@ class GodotMCP {
                 // Export & Validate
                 case 'export_project': return this.handleExportProject(args);
                 case 'validate_scene': return this.handleValidateScene(args);
+                // Project Settings
+                case 'get_project_setting': return this.handleGetProjectSetting(args);
+                case 'set_project_setting': return this.handleSetProjectSetting(args);
+                // Input
+                case 'list_input_actions': return this.handleGenericOp('list_input_actions', args);
+                case 'create_input_action': return this.handleGenericOp('create_input_action', args);
+                // Collision
+                case 'add_collision_layer': return this.handleGenericOp('add_collision_layer', args);
+                case 'set_collision_mask': return this.handleGenericOp('set_collision_mask', args);
+                // Assets
+                case 'import_asset': return this.handleGenericOp('import_asset', args);
+                // Animation
+                case 'create_animation': return this.handleGenericOp('create_animation', args);
+                case 'add_animation_track': return this.handleGenericOp('add_animation_track', args);
+                // Find
+                case 'find_nodes': return this.handleFindNodes(args);
+                // Script
+                case 'execute_gdscript': return this.handleGenericOp('execute_gdscript', args);
+                // Snapshot
+                case 'snapshot_scene': return this.handleGenericOp('snapshot_scene', args);
+                case 'compare_scenes': return this.handleGenericOp('compare_scenes', args);
                 default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
             }
         });
@@ -910,6 +952,73 @@ class GodotMCP {
                     message += '\n\nWarnings:\n' + data.warnings.map((w) => '  - ' + w).join('\n');
                 }
                 return { content: [{ type: 'text', text: message }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleGetProjectSetting(args) {
+        if (!args.projectPath || !args.setting) {
+            return this.error('Missing required params: projectPath, setting');
+        }
+        const params = {
+            setting: args.setting,
+        };
+        if (args.default !== undefined)
+            params.default = args.default;
+        const { stdout, stderr } = await this.executeOp('get_project_setting', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                return { content: [{ type: 'text', text: `${data.setting} = ${JSON.stringify(data.value)}` }] };
+            }
+            catch {
+                return { content: [{ type: 'text', text: stdout }] };
+            }
+        }
+        return { content: [{ type: 'text', text: stdout }] };
+    }
+    async handleSetProjectSetting(args) {
+        if (!args.projectPath || !args.setting || args.value === undefined) {
+            return this.error('Missing required params: projectPath, setting, value');
+        }
+        const params = {
+            setting: args.setting,
+            value: args.value,
+            save: args.save !== false
+        };
+        const { stdout, stderr } = await this.executeOp('set_project_setting', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        return { content: [{ type: 'text', text: `Setting updated: ${args.setting}` }] };
+    }
+    async handleFindNodes(args) {
+        if (!args.projectPath || !args.scenePath) {
+            return this.error('Missing required params: projectPath, scenePath');
+        }
+        const params = {
+            scene_path: args.scenePath,
+        };
+        if (args.type)
+            params.type = args.type;
+        if (args.namePattern)
+            params.name_pattern = args.namePattern;
+        if (args.recursive !== undefined)
+            params.recursive = args.recursive;
+        const { stdout, stderr } = await this.executeOp('find_nodes', params, args.projectPath);
+        if (stderr.includes('[ERROR]'))
+            return this.error(`Failed: ${stderr}`);
+        const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/);
+        if (mcpMatch) {
+            try {
+                const data = JSON.parse(mcpMatch[1]);
+                const nodes = data.nodes.map((n) => `- ${n.type}: ${n.name}`).join('\n');
+                return { content: [{ type: 'text', text: `Found ${data.count} nodes:\n${nodes}` }] };
             }
             catch {
                 return { content: [{ type: 'text', text: stdout }] };

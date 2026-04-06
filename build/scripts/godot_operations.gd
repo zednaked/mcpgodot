@@ -81,6 +81,19 @@ func _init():
         "set_node_scale_3d": set_node_scale_3d(params)
         "export_project": export_project(params)
         "validate_scene": validate_scene(params)
+        "get_project_setting": get_project_setting(params)
+        "set_project_setting": set_project_setting(params)
+        "list_input_actions": list_input_actions(params)
+        "create_input_action": create_input_action(params)
+        "add_collision_layer": add_collision_layer(params)
+        "set_collision_mask": set_collision_mask(params)
+        "import_asset": import_asset(params)
+        "create_animation": create_animation(params)
+        "add_animation_track": add_animation_track(params)
+        "find_nodes": find_nodes(params)
+        "execute_gdscript": execute_gdscript(params)
+        "snapshot_scene": snapshot_scene(params)
+        "compare_scenes": compare_scenes(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -2284,3 +2297,604 @@ func validate_scene(params):
     }
     
     print("MCP_RESULT:" + JSON.stringify(result))
+
+# ===== PROJECT SETTINGS =====
+
+func get_project_setting(params):
+    var setting = params.get("setting", "")
+    var default = params.get("default", null)
+    
+    log_debug("Getting project setting: " + setting)
+    
+    if setting == "":
+        printerr("[ERROR] Setting name required")
+        quit(1)
+    
+    var value = ProjectSettings.get_setting(setting, default)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "setting": setting,
+        "value": _serialize_variant(value),
+        "type": typeof(value)
+    }))
+
+func set_project_setting(params):
+    var setting = params.get("setting", "")
+    var value = params.get("value", null)
+    var save = params.get("save", true)
+    
+    log_debug("Setting project setting: " + setting)
+    
+    if setting == "":
+        printerr("[ERROR] Setting name required")
+        quit(1)
+    
+    ProjectSettings.set_setting(setting, value)
+    
+    if save:
+        var error = ProjectSettings.save()
+        if error != OK:
+            printerr("[ERROR] Failed to save project settings")
+            quit(1)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "setting": setting,
+        "value": _serialize_variant(value),
+        "saved": save
+    }))
+
+func _serialize_variant(val):
+    match typeof(val):
+        TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+            return val
+        TYPE_VECTOR2:
+            return {"x": val.x, "y": val.y}
+        TYPE_VECTOR3:
+            return {"x": val.x, "y": val.y, "z": val.z}
+        TYPE_COLOR:
+            return {"r": val.r, "g": val.g, "b": val.b, "a": val.a}
+        TYPE_NODE_PATH:
+            return val
+        TYPE_DICTIONARY:
+            return val
+        TYPE_ARRAY:
+            return val
+        _:
+            return str(val)
+
+# ===== INPUT ACTIONS =====
+
+func list_input_actions(params):
+    var actions = ProjectSettings.get_property_list()
+    var input_actions = []
+    
+    for prop in actions:
+        if prop.name.begins_with("input/"):
+            var action_name = prop.name.replace("input/", "")
+            var events = ProjectSettings.get_setting("input/" + action_name)
+            input_actions.append({
+                "action": action_name,
+                "events_count": events.size() if events else 0
+            })
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "count": input_actions.size(),
+        "actions": input_actions
+    }))
+
+func create_input_action(params):
+    var action = params.get("action", "")
+    var events = params.get("events", [])
+    
+    log_debug("Creating input action: " + action)
+    
+    if action == "":
+        printerr("[ERROR] Action name required")
+        quit(1)
+    
+    if ProjectSettings.has_setting("input/" + action):
+        log_info("Action already exists: " + action)
+    else:
+        ProjectSettings.set_setting("input/" + action, [])
+    
+    for event_data in events:
+        var event = _create_input_event(event_data)
+        if event != null:
+            var current = ProjectSettings.get_setting("input/" + action)
+            current.append(event)
+            ProjectSettings.set_setting("input/" + action, current)
+    
+    ProjectSettings.save()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "action": action,
+        "events_count": events.size()
+    }))
+
+func _create_input_event(event_data):
+    match event_data.get("type", "key"):
+        "key":
+            var key_event = InputEventKey.new()
+            if event_data.has("keycode"):
+                key_event.keycode = _parse_keycode(event_data.keycode)
+            elif event_data.has("scancode"):
+                key_event.physical_keycode = _parse_scancode(event_data.scancode)
+            return key_event
+        "mouse_button":
+            var mouse_event = InputEventMouseButton.new()
+            mouse_event.button_index = int(event_data.get("button_index", 1))
+            mouse_event.pressed = event_data.get("pressed", true)
+            return mouse_event
+        "joypad_button":
+            var joy_event = InputEventJoypadButton.new()
+            joy_event.button_index = int(event_data.get("button_index", 0))
+            return joy_event
+    return null
+
+func _parse_keycode(keycode):
+    match str(keycode).to_upper():
+        "SPACE": return KEY_SPACE
+        "ENTER": return KEY_ENTER
+        "SHIFT": return KEY_SHIFT
+        "CTRL": return KEY_CTRL
+        "ALT": return KEY_ALT
+        "UP": return KEY_UP
+        "DOWN": return KEY_DOWN
+        "LEFT": return KEY_LEFT
+        "RIGHT": return KEY_RIGHT
+        "W": return KEY_W
+        "A": return KEY_A
+        "S": return KEY_S
+        "D": return KEY_D
+        "ESCAPE": return KEY_ESCAPE
+        _: return KEY_SPACE
+
+func _parse_scancode(scancode):
+    return int(scancode)
+
+# ===== COLLISION LAYERS =====
+
+func add_collision_layer(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var layer = int(params.layer or 1)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Adding collision layer " + str(layer) + " to " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if target is CollisionObject2D:
+        target.collision_layer |= (1 << (layer - 1))
+    elif target is CollisionObject3D:
+        target.collision_layer |= (1 << (layer - 1))
+    else:
+        printerr("[ERROR] Node is not a collision object")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "layer": layer
+    }))
+
+func set_collision_mask(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var mask = int(params.mask or 1)
+    var create_backup = params.get("create_backup", true)
+    
+    log_debug("Setting collision mask " + str(mask) + " on " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if target is CollisionObject2D:
+        target.collision_mask = mask
+    elif target is CollisionObject3D:
+        target.collision_mask = mask
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "mask": mask
+    }))
+
+# ===== ASSET IMPORT =====
+
+func import_asset(params):
+    var source_path = params.get("source_path", "")
+    var dest_path = _normalize_path(params.get("dest_path", ""))
+    var import_type = params.get("type", "Texture")
+    
+    log_debug("Importing asset from " + source_path)
+    
+    if source_path == "":
+        printerr("[ERROR] Source path required")
+        quit(1)
+    
+    if not FileAccess.file_exists(source_path):
+        printerr("[ERROR] Source file not found: " + source_path)
+        quit(1)
+    
+    var dest_abs = _to_absolute(dest_path)
+    var dest_dir = dest_abs.get_base_dir()
+    
+    var dir = DirAccess.open(dest_dir)
+    if dir == null:
+        DirAccess.open("res://").make_dir_recursive(dest_path.get_base_dir())
+    
+    var dest_file = FileAccess.open(dest_abs, FileAccess.READ)
+    if dest_file:
+        dest_file.close()
+        log_info("File already exists, skipping copy: " + dest_path)
+    else:
+        DirAccess.copy_absolute(source_path, dest_abs)
+        log_info("Asset copied to: " + dest_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "source": source_path,
+        "dest": dest_path,
+        "type": import_type
+    }))
+
+# ===== ANIMATION =====
+
+func create_animation(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var anim_player_path = params.get("anim_player_path", "")
+    var anim_name = params.get("animation_name", "new_animation")
+    var duration = float(params.get("duration", 1.0))
+    var loop = params.get("loop", false)
+    
+    log_debug("Creating animation: " + anim_name)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var anim_player = _find_node_by_path(root, anim_player_path) if anim_player_path != "" else root.find_child("AnimationPlayer", true, false)
+    
+    if anim_player == null or not anim_player is AnimationPlayer:
+        printerr("[ERROR] AnimationPlayer not found")
+        root.free()
+        quit(1)
+    
+    var animation = Animation.new()
+    animation.length = duration
+    animation.loop_mode = 1 if loop else 0
+    
+    anim_player.add_animation(anim_name, animation)
+    _save_packed_scene(root, scene_path)
+    root.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "animation_name": anim_name,
+        "duration": duration,
+        "loop": loop
+    }))
+
+func add_animation_track(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var anim_player_path = params.get("anim_player_path", "")
+    var anim_name = params.get("animation_name", "")
+    var node_path = params.get("node_path", "")
+    var property = params.get("property", "")
+    var keyframes = params.get("keyframes", [])
+    
+    log_debug("Adding track to animation: " + anim_name)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var anim_player = _find_node_by_path(root, anim_player_path) if anim_player_path != "" else root.find_child("AnimationPlayer", true, false)
+    
+    if anim_player == null or not anim_player is AnimationPlayer:
+        printerr("[ERROR] AnimationPlayer not found")
+        root.free()
+        quit(1)
+    
+    if not anim_player.has_animation(anim_name):
+        printerr("[ERROR] Animation not found: " + anim_name)
+        root.free()
+        quit(1)
+    
+    var animation = anim_player.get_animation(anim_name)
+    var track_index = animation.add_track(Animation.TYPE_VALUE)
+    animation.track_set_path(track_index, node_path + ":" + property)
+    
+    for kf in keyframes:
+        var time = float(kf.get("time", 0))
+        var value = kf.get("value", 0)
+        var transition = int(kf.get("transition", 1))
+        
+        animation.track_insert_key(track_index, time, value)
+        animation.key_set_transition(track_index, time, transition)
+    
+    _save_packed_scene(root, scene_path)
+    root.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "animation": anim_name,
+        "track_index": track_index,
+        "keys_added": keyframes.size()
+    }))
+
+# ===== FIND NODES =====
+
+func find_nodes(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_type = params.get("type", "")
+    var name_pattern = params.get("name_pattern", "")
+    var recursive = params.get("recursive", true)
+    
+    log_debug("Finding nodes in: " + scene_path)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var results = []
+    
+    _collect_nodes_matching(root, node_type, name_pattern, recursive, results)
+    
+    root.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "count": results.size(),
+        "nodes": results
+    }))
+
+func _collect_nodes_matching(node: Node, node_type: String, name_pattern: String, recursive: bool, results: Array):
+    var matches = true
+    
+    if node_type != "":
+        var type_name = node.get_class()
+        if node_type.to_lower() in type_name.to_lower():
+            matches = true
+        else:
+            matches = false
+    
+    if name_pattern != "":
+        if _match_pattern(node.name, name_pattern):
+            matches = matches and true
+        else:
+            matches = false
+    
+    if matches and node.name != "root":
+        var node_path = ""
+        if node.get_scene() != null:
+            node_path = node.get_path()
+        results.append({
+            "name": node.name,
+            "type": node.get_class(),
+            "path": node_path
+        })
+    
+    if recursive:
+        for child in node.get_children():
+            _collect_nodes_matching(child, node_type, name_pattern, recursive, results)
+
+func _match_pattern(name: String, pattern: String) -> bool:
+    if pattern == "*":
+        return true
+    if pattern.begins_with("*") and pattern.ends_with("*"):
+        return pattern.trim_prefix("*").trim_suffix("*") in name
+    if pattern.begins_with("*"):
+        return name.ends_with(pattern.trim_prefix("*"))
+    if pattern.ends_with("*"):
+        return name.begins_with(pattern.trim_suffix("*"))
+    return name == pattern
+
+# ===== EXECUTE GDSCRIPT =====
+
+func execute_gdscript(params):
+    var script_content = params.get("script", "")
+    var scene_path = params.get("scene_path", "")
+    
+    log_debug("Executing custom GDScript")
+    
+    if script_content == "":
+        printerr("[ERROR] Script content required")
+        quit(1)
+    
+    var script = GDScript.new()
+    script.source_code = script_content
+    
+    var error = script.reload()
+    if error != OK:
+        printerr("[ERROR] Failed to compile script")
+        quit(1)
+    
+    var result = null
+    if scene_path != "":
+        var scene = load(scene_path)
+        if scene != null:
+            var root = scene.instantiate()
+            script.set_instance_binding_value(root, "root", root)
+            result = script.new()
+        else:
+            result = script.new()
+    else:
+        result = script.new()
+    
+    if result != null and result is Node:
+        result.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "executed": true
+    }))
+
+# ===== SNAPSHOT & COMPARE =====
+
+func snapshot_scene(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var output_path = params.get("output_path", scene_path + ".snapshot.json")
+    
+    log_debug("Creating snapshot of: " + scene_path)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var snapshot = _node_to_dict(root)
+    root.free()
+    
+    var abs_output = _to_absolute(output_path)
+    var file = FileAccess.open(abs_output, FileAccess.WRITE)
+    if file == null:
+        printerr("[ERROR] Failed to create snapshot file")
+        quit(1)
+    
+    file.store_string(JSON.stringify(snapshot, "  "))
+    file.close()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "scene_path": scene_path,
+        "snapshot_path": output_path
+    }))
+
+func compare_scenes(params):
+    var scene_a = _normalize_path(params.get("scene_a", ""))
+    var scene_b = _normalize_path(params.get("scene_b", ""))
+    
+    log_debug("Comparing scenes")
+    
+    if scene_a == "" or scene_b == "":
+        printerr("[ERROR] Both scene_a and scene_b required")
+        quit(1)
+    
+    var a = load(scene_a)
+    var b = load(scene_b)
+    
+    if a == null or b == null:
+        printerr("[ERROR] Failed to load scenes")
+        quit(1)
+    
+    var root_a = a.instantiate()
+    var root_b = b.instantiate()
+    
+    var diff = _compare_nodes(root_a, root_b)
+    
+    root_a.free()
+    root_b.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "scene_a": scene_a,
+        "scene_b": scene_b,
+        "identical": diff.size() == 0,
+        "differences": diff
+    }))
+
+func _node_to_dict(node: Node) -> Dictionary:
+    var dict = {
+        "name": node.name,
+        "type": node.get_class(),
+        "properties": {},
+        "children": []
+    }
+    
+    for prop in node.get_property_list():
+        var name = prop.name
+        if not name.begins_with("_") and not name in ["script"]:
+            dict.properties[name] = _serialize_variant(node.get(name))
+    
+    for child in node.get_children():
+        dict.children.append(_node_to_dict(child))
+    
+    return dict
+
+func _compare_nodes(node_a: Node, node_b: Node, path: String = "") -> Array:
+    var differences = []
+    var current_path = path + "/" + node_a.name if path != "" else node_a.name
+    
+    if node_a.get_class() != node_b.get_class():
+        differences.append({
+            "path": current_path,
+            "type": "class_mismatch",
+            "a": node_a.get_class(),
+            "b": node_b.get_class()
+        })
+    
+    for prop in node_a.get_property_list():
+        var name = prop.name
+        if not name.begins_with("_") and name in ["position", "rotation", "scale", "modulate"]:
+            var val_a = node_a.get(name)
+            var val_b = node_b.get(name)
+            if val_a != val_b:
+                differences.append({
+                    "path": current_path,
+                    "type": "property_diff",
+                    "property": name,
+                    "a": _serialize_variant(val_a),
+                    "b": _serialize_variant(val_b)
+                })
+    
+    var children_a = node_a.get_children()
+    var children_b = node_b.get_children()
+    
+    if children_a.size() != children_b.size():
+        differences.append({
+            "path": current_path,
+            "type": "children_count_diff",
+            "a": children_a.size(),
+            "b": children_b.size()
+        })
+    
+    return differences

@@ -27,7 +27,7 @@ COMPRESSION_LEVEL=high node build/index.js
 | `DEBUG` | `true`, `false` | `false` | Logs de debug |
 | `GODOT_PATH` | path | auto | Caminho do Godot |
 
-## Ferramentas (48 total)
+## Ferramentas (61 total)
 
 ### Editor
 
@@ -138,6 +138,59 @@ COMPRESSION_LEVEL=high node build/index.js
 | `run_scene` | Executa cena/projeto |
 | `export_project` | Exporta para plataforma |
 | `validate_scene` | Valida estrutura da cena |
+
+### Project Settings
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `get_project_setting` | Ler configuração |
+| `set_project_setting` | Modificar configuração |
+
+### Input
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `list_input_actions` | Listar ações de input |
+| `create_input_action` | Criar ação de input |
+
+### Collision
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `add_collision_layer` | Adicionar layer de colisão |
+| `set_collision_mask` | Configurar mask |
+
+### Assets
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `import_asset` | Importar asset |
+
+### Animation
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_animation` | Criar animação |
+| `add_animation_track` | Adicionar track |
+
+### Find
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `find_nodes` | Buscar nós |
+
+### Script
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `execute_gdscript` | Executar GDScript |
+
+### Snapshot
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `snapshot_scene` | Salvar estado da cena |
+| `compare_scenes` | Comparar cenas |
 
 ## Exemplos
 
@@ -365,6 +418,121 @@ await mcp.call('export_project', {
   projectPath: '/path/to/project',
   preset: 'Linux',
   outputPath: '/tmp/export'
+});
+```
+
+### Project Settings
+
+```typescript
+// Ler configuração
+await mcp.call('get_project_setting', {
+  projectPath: '/path/to/project',
+  setting: 'physics/2d/default_gravity'
+});
+
+// Modificar configuração
+await mcp.call('set_project_setting', {
+  projectPath: '/path/to/project',
+  setting: 'physics/2d/default_gravity',
+  value: 980
+});
+```
+
+### Input Actions
+
+```typescript
+// Listar ações
+await mcp.call('list_input_actions', {
+  projectPath: '/path/to/project'
+});
+
+// Criar ação
+await mcp.call('create_input_action', {
+  projectPath: '/path/to/project',
+  action: 'jump',
+  events: [{ type: 'key', keycode: 'Space' }]
+});
+```
+
+### Collision
+
+```typescript
+// Adicionar layer de colisão
+await mcp.call('add_collision_layer', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn',
+  nodePath: 'CollisionShape2D',
+  layer: 2
+});
+
+// Configurar mask
+await mcp.call('set_collision_mask', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn',
+  nodePath: 'CollisionShape2D',
+  mask: 3
+});
+```
+
+### Animation
+
+```typescript
+// Criar animação
+await mcp.call('create_animation', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn',
+  animationName: 'walk',
+  duration: 1.0,
+  loop: true
+});
+
+// Adicionar track com keyframes
+await mcp.call('add_animation_track', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn',
+  animationName: 'walk',
+  nodePath: 'Sprite',
+  property: 'position:x',
+  keyframes: [
+    { time: 0, value: 0 },
+    { time: 0.5, value: 100 }
+  ]
+});
+```
+
+### Find Nodes
+
+```typescript
+// Buscar nós por tipo
+await mcp.call('find_nodes', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Level.tscn',
+  type: 'CollisionShape2D'
+});
+
+// Buscar por padrão de nome
+await mcp.call('find_nodes', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Level.tscn',
+  namePattern: '*Enemy*'
+});
+```
+
+### Snapshot & Compare
+
+```typescript
+// Salvar snapshot
+await mcp.call('snapshot_scene', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Player.tscn',
+  outputPath: 'snapshots/player_v1.json'
+});
+
+// Comparar cenas
+await mcp.call('compare_scenes', {
+  projectPath: '/path/to/project',
+  sceneA: 'scenes/Player_v1.tscn',
+  sceneB: 'scenes/Player_v2.tscn'
 });
 ```
 
