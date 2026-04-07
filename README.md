@@ -55,7 +55,7 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 | `DEBUG` | `true`, `false` | `false` | Logs de debug |
 | `GODOT_PATH` | path | auto | Caminho do Godot |
 
-## Ferramentas (72 total)
+## Ferramentas (116 total)
 
 ### Editor
 
@@ -78,8 +78,10 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 | `add_node_with_script` | Nó + script |
 | `remove_node` | Remove nó |
 | `duplicate_node` | Duplica nó |
+| `move_node` | Move/repara nó |
 | `list_nodes` | Lista nós |
 | `batch_operations` | Operações atômicas |
+| `generate_nodes` | Cria múltiplos nós |
 | `load_sprite` | Carrega textura |
 | `save_scene` | Salva cena |
 | `modify_node_property` | Modifica propriedade |
@@ -220,7 +222,16 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 | `snapshot_scene` | Salvar estado da cena |
 | `compare_scenes` | Comparar cenas |
 
-### Runtime Debug (NOVO!)
+### UI Layout
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `set_layout` | Define layout completo |
+| `apply_layout_preset` | Aplica preset de layout |
+| `copy_layout` | Copia layout entre nós |
+| `list_layout_presets` | Lista presets disponíveis |
+
+### Runtime Debug
 
 | Ferramenta | Descrição |
 |------------|-----------|
@@ -233,6 +244,80 @@ GODOT_PATH=/usr/local/bin/godot node build/index.js
 | `runtime_get_tree_info` | Info da árvore do jogo |
 | `runtime_find_node` | Buscar nó por nome/tipo |
 | `runtime_get_node_info` | Info completa de um nó |
+| `runtime_eval_gdscript` | Executar GDScript no jogo |
+
+### UI Containers
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_hbox_container` | Cria HBoxContainer |
+| `create_vbox_container` | Cria VBoxContainer |
+| `create_grid_container` | Cria GridContainer |
+| `create_tab_container` | Cria TabContainer |
+| `create_scroll_container` | Cria ScrollContainer |
+
+### UI Controls
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_button` | Cria Button |
+| `create_label` | Cria Label |
+| `create_texture_rect` | Cria TextureRect (imagem) |
+| `create_line_edit` | Cria LineEdit (input) |
+| `create_text_edit` | Cria TextEdit (textarea) |
+| `create_check_box` | Cria CheckBox |
+| `create_check_button` | Cria CheckButton (toggle) |
+| `create_option_button` | Cria OptionButton (dropdown) |
+| `create_progress_bar` | Cria ProgressBar |
+| `create_slider` | Cria HSlider |
+
+### UI Styling
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `set_theme_stylebox` | Define StyleBoxFlat |
+| `create_theme` | Cria Theme resource |
+| `apply_theme_to_node` | Aplica theme a nó |
+| `set_font` | Define fonte |
+
+### UI Dialogs
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `create_file_dialog` | Cria FileDialog |
+| `create_accept_dialog` | Cria AcceptDialog |
+| `create_confirm_dialog` | Cria ConfirmDialog |
+| `create_message_dialog` | Cria MessageDialog |
+
+### Scene Operations
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `delete_scene` | Deleta cena |
+| `rename_node` | Renomeia nó |
+| `find_node_by_type` | Busca por tipo |
+
+### Script Operations
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `delete_script` | Deleta script |
+| `read_script` | Lê script |
+| `get_script_methods` | Lista métodos |
+
+### Project Management
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `get_project_settings` | Lista settings |
+| `import_all_assets` | Reimporta assets |
+| `cleanup_backups` | Limpa backups |
+
+### Debugging
+
+| Ferramenta | Descrição |
+|------------|-----------|
+| `log_to_console` | Log no console |
 
 ## Exemplos
 
@@ -578,30 +663,71 @@ await mcp.call('compare_scenes', {
 });
 ```
 
-### Runtime Debug (NOVO!)
+### UI Layout
 
-O mcpgodot agora suporta operação em runtime! Você pode conectar a um jogo em execução e manipular propriedades, chamar métodos, e inspecionar o estado do jogo em tempo real.
+```typescript
+// Aplicar preset de layout
+await mcp.call('apply_layout_preset', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/UI.tscn',
+  nodePath: 'Panel',
+  preset: 'top_bar'
+});
+
+// Definir layout completo
+await mcp.call('set_layout', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/UI.tscn',
+  nodePath: 'Panel',
+  layout: {
+    anchors_preset: 15,
+    offset_left: 0,
+    offset_top: 0,
+    offset_right: 800,
+    offset_bottom: 60
+  }
+});
+
+// Copiar layout entre nós
+await mcp.call('copy_layout', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/UI.tscn',
+  fromNode: 'PanelTemplate',
+  toNode: 'PanelNew'
+});
+
+// Listar presets disponíveis
+await mcp.call('list_layout_presets', {});
+```
+
+### Runtime Debug
+
+O mcpgodot suporta operação em runtime! Você pode conectar a um jogo em execução e manipular propriedades, chamar métodos, e inspecionar o estado do jogo em tempo real.
 
 #### Como usar:
 
-1. **Adicione o script de debug ao seu projeto Godot:**
-
-   Copie `scripts/mcp_debug_server.gd` para a pasta `addons/` do seu projeto e adicione ao seu script principal:
-
-   ```gdscript
-   func _ready():
-       var debug_script = load("res://addons/mcp_debug_server.gd")
-       if debug_script:
-           var debug_server = Node.new()
-           debug_server.set_script(debug_script)
-           add_child(debug_server)
-   ```
-
-2. **Execute o jogo** - o servidor de debug inicia na porta 9090
-
-3. **Use as ferramentas runtime:**
+1. **Inicie o jogo com debug server:**
+   
+   Use a ferramenta `runtime_start_debug` que carrega automaticamente o script de debug:
 
 ```typescript
+// Iniciar jogo com servidor de debug
+await mcp.call('runtime_start_debug', {
+  projectPath: '/path/to/project',
+  scenePath: 'scenes/Main.tscn'  // opcional
+});
+```
+
+O servidor de debug inicia automaticamente na porta 9090.
+
+2. **Use as ferramentas runtime:**
+
+```typescript
+// Iniciar jogo com debug (forma recomendada)
+await mcp.call('runtime_start_debug', {
+  projectPath: '/path/to/project'
+});
+
 // Conectar ao jogo em execução
 await mcp.call('runtime_connect', {
   projectPath: '/path/to/project'
@@ -699,14 +825,16 @@ Failed: 0/9
 ```
 mcpgodot/
 ├── src/
-│   ├── index.ts              # Server MCP
+│   ├── index.ts              # Server MCP (TypeScript)
 │   └── scripts/
-│       ├── godot_operations.gd   # Operações em arquivos de cena
-│       └── mcp_debug_server.gd   # Servidor de debug runtime (NOVO!)
+│       └── godot_operations.gd  # Operações em arquivos de cena (GDScript)
+├── scripts/
+│   └── mcp_debug_server.gd   # Servidor de debug runtime
 ├── build/                    # Compiled output
 ├── test-suite.ts            # Tests
-├── TEST_PLAN.md            # Plano de testes
+├── TEST_PLAN.md             # Plano de testes
 ├── TOKEN_OPTIMIZATION.md    # Estratégias de tokens
+├── GAPS.md                  # Lacunas identificadas
 └── package.json
 ```
 
@@ -725,3 +853,17 @@ mcpgodot/
 ## Licença
 
 MIT
+
+## Changelog
+
+### 1.1.0 (2026-04-07)
+- **35 novas ferramentas de UI** para produção de interfaces completas
+- **UI Containers**: create_hbox_container, create_vbox_container, create_grid_container, create_tab_container, create_scroll_container
+- **UI Controls**: create_button, create_label, create_texture_rect, create_line_edit, create_text_edit, create_check_box, create_check_button, create_option_button, create_progress_bar, create_slider
+- **UI Styling**: set_theme_stylebox, create_theme, apply_theme_to_node, set_font
+- **UI Dialogs**: create_file_dialog, create_accept_dialog, create_confirm_dialog
+- **Scene Operations**: delete_scene, rename_node, find_node_by_type
+- **Script Operations**: delete_script, read_script, get_script_methods
+- **Project Management**: get_project_settings, import_all_assets, cleanup_backups
+- **Bug fixes**: Correção de parse errors em GDScript (MessageDialog, DirAccess.get_modified_time)
+- **Total de ferramentas: 116**

@@ -363,6 +363,48 @@ class GodotMCP {
       { name: 'apply_layout_preset', desc: 'Apply named layout preset (top_bar, bottom_right, full_rect, etc)', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', preset: 'string', createBackup: 'boolean?' } },
       { name: 'copy_layout', desc: 'Copy layout from one node to another', props: { projectPath: 'string', scenePath: 'string', fromNode: 'string', toNode: 'string', createBackup: 'boolean?' } },
       { name: 'list_layout_presets', desc: 'List available layout presets', props: {} },
+      // UI Containers
+      { name: 'create_hbox_container', desc: 'Create HBoxContainer with optional children', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', parentNodePath: 'string?', children: 'array?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_vbox_container', desc: 'Create VBoxContainer with optional children', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', parentNodePath: 'string?', children: 'array?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_grid_container', desc: 'Create GridContainer with columns', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', columns: 'number', parentNodePath: 'string?', children: 'array?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_tab_container', desc: 'Create TabContainer with optional tabs', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', parentNodePath: 'string?', tabs: 'array?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_scroll_container', desc: 'Create ScrollContainer', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      // UI Controls
+      { name: 'create_button', desc: 'Create Button', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_label', desc: 'Create Label', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_texture_rect', desc: 'Create TextureRect (image)', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', texturePath: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_line_edit', desc: 'Create LineEdit (text input)', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_text_edit', desc: 'Create TextEdit (textarea)', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_check_box', desc: 'Create CheckBox', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_check_button', desc: 'Create CheckButton (toggle)', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', text: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_option_button', desc: 'Create OptionButton (dropdown)', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', items: 'array?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_progress_bar', desc: 'Create ProgressBar', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', min: 'number?', max: 'number?', value: 'number?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_slider', desc: 'Create HSlider', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', min: 'number?', max: 'number?', value: 'number?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      // UI Styling
+      { name: 'set_theme_stylebox', desc: 'Set StyleBoxFlat on Control node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', styleType: 'string?', bgColor: 'object?', borderColor: 'object?', cornerRadius: 'number?', createBackup: 'boolean?' } },
+      { name: 'create_theme', desc: 'Create Theme resource', props: { projectPath: 'string', path: 'string?', name: 'string?' } },
+      { name: 'apply_theme_to_node', desc: 'Apply theme to node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', themePath: 'string', createBackup: 'boolean?' } },
+      { name: 'set_font', desc: 'Set font on Label/Button', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', fontPath: 'string', fontSize: 'number?', createBackup: 'boolean?' } },
+      // UI Dialogs
+      { name: 'create_file_dialog', desc: 'Create FileDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', mode: 'number?', access: 'number?', filters: 'array?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_accept_dialog', desc: 'Create AcceptDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_confirm_dialog', desc: 'Create ConfirmDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_message_dialog', desc: 'Create MessageDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', message: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      // Scene Operations
+      { name: 'delete_scene', desc: 'Delete scene file', props: { projectPath: 'string', scenePath: 'string' } },
+      { name: 'rename_node', desc: 'Rename node in scene', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newName: 'string', createBackup: 'boolean?' } },
+      { name: 'find_node_by_type', desc: 'Find nodes by type', props: { projectPath: 'string', scenePath: 'string', type: 'string', recursive: 'boolean?' } },
+      // Script Operations
+      { name: 'delete_script', desc: 'Delete script file', props: { projectPath: 'string', scriptPath: 'string' } },
+      { name: 'read_script', desc: 'Read script content', props: { projectPath: 'string', scriptPath: 'string' } },
+      { name: 'get_script_methods', desc: 'Get script methods', props: { projectPath: 'string', scriptPath: 'string' } },
+      // Project Management
+      { name: 'get_project_settings', desc: 'Get all project settings', props: { projectPath: 'string', filter: 'string?' } },
+      { name: 'import_all_assets', desc: 'Reimport all assets', props: { projectPath: 'string?' } },
+      { name: 'cleanup_backups', desc: 'Clean old backup files', props: { projectPath: 'string', olderThanDays: 'number?' } },
+      // Debugging
+      { name: 'log_to_console', desc: 'Log message to console', props: { message: 'string', type: 'string?' } },
+      { name: 'runtime_eval_gdscript', desc: 'Evaluate GDScript in running game', props: { projectPath: 'string', script: 'string', port: 'number?' } },
     ];
 
     this.toolDefinitions = baseTools;
@@ -493,6 +535,48 @@ class GodotMCP {
         case 'apply_layout_preset': return this.handleApplyLayoutPreset(args);
         case 'copy_layout': return this.handleCopyLayout(args);
         case 'list_layout_presets': return this.handleListLayoutPresets();
+        // UI Containers
+        case 'create_hbox_container': return this.handleGenericOp('create_hbox_container', args);
+        case 'create_vbox_container': return this.handleGenericOp('create_vbox_container', args);
+        case 'create_grid_container': return this.handleGenericOp('create_grid_container', args);
+        case 'create_tab_container': return this.handleGenericOp('create_tab_container', args);
+        case 'create_scroll_container': return this.handleGenericOp('create_scroll_container', args);
+        // UI Controls
+        case 'create_button': return this.handleGenericOp('create_button', args);
+        case 'create_label': return this.handleGenericOp('create_label', args);
+        case 'create_texture_rect': return this.handleGenericOp('create_texture_rect', args);
+        case 'create_line_edit': return this.handleGenericOp('create_line_edit', args);
+        case 'create_text_edit': return this.handleGenericOp('create_text_edit', args);
+        case 'create_check_box': return this.handleGenericOp('create_check_box', args);
+        case 'create_check_button': return this.handleGenericOp('create_check_button', args);
+        case 'create_option_button': return this.handleGenericOp('create_option_button', args);
+        case 'create_progress_bar': return this.handleGenericOp('create_progress_bar', args);
+        case 'create_slider': return this.handleGenericOp('create_slider', args);
+        // UI Styling
+        case 'set_theme_stylebox': return this.handleGenericOp('set_theme_stylebox', args);
+        case 'create_theme': return this.handleGenericOp('create_theme', args);
+        case 'apply_theme_to_node': return this.handleGenericOp('apply_theme_to_node', args);
+        case 'set_font': return this.handleGenericOp('set_font', args);
+        // UI Dialogs
+        case 'create_file_dialog': return this.handleGenericOp('create_file_dialog', args);
+        case 'create_accept_dialog': return this.handleGenericOp('create_accept_dialog', args);
+        case 'create_confirm_dialog': return this.handleGenericOp('create_confirm_dialog', args);
+        case 'create_message_dialog': return this.handleGenericOp('create_message_dialog', args);
+        // Scene Operations
+        case 'delete_scene': return this.handleGenericOp('delete_scene', args);
+        case 'rename_node': return this.handleGenericOp('rename_node', args);
+        case 'find_node_by_type': return this.handleGenericOp('find_node_by_type', args);
+        // Script Operations
+        case 'delete_script': return this.handleGenericOp('delete_script', args);
+        case 'read_script': return this.handleGenericOp('read_script', args);
+        case 'get_script_methods': return this.handleGenericOp('get_script_methods', args);
+        // Project Management
+        case 'get_project_settings': return this.handleGenericOp('get_project_settings', args);
+        case 'import_all_assets': return this.handleGenericOp('import_all_assets', args);
+        case 'cleanup_backups': return this.handleGenericOp('cleanup_backups', args);
+        // Debugging
+        case 'log_to_console': return this.handleLogToConsole(args);
+        case 'runtime_eval_gdscript': return this.handleRuntimeEvalGDScript(args);
         default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
       }
     });
@@ -1548,6 +1632,30 @@ class GodotMCP {
     }
     
     return { content: [{ type: 'text', text: message }] };
+  }
+
+  private handleLogToConsole(args: Record<string, unknown>) {
+    const message = args.message as string || '';
+    const type = args.type as string || 'info';
+    console.log(`[MCP] ${type.toUpperCase()}: ${message}`);
+    return { content: [{ type: 'text', text: `Logged: ${message}` }] };
+  }
+
+  private async handleRuntimeEvalGDScript(args: Record<string, unknown>) {
+    if (!args.projectPath) {
+      return this.error('Missing required param: projectPath');
+    }
+    const script = args.script as string;
+    const port = (args.port as number) || 9090;
+    const result = await this.sendRuntimeCommand(args.projectPath as string, {
+      command: 'eval',
+      params: { script },
+      id: 1
+    }, port);
+    if (result.error) {
+      return this.error(result.error);
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(result.result, null, 2) }] };
   }
 
   private async cleanup() {

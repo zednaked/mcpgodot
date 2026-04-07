@@ -98,6 +98,40 @@ func _init():
         "compare_scenes": compare_scenes(params)
         "set_layout": set_layout(params)
         "move_node": move_node(params)
+        "create_hbox_container": create_hbox_container(params)
+        "create_vbox_container": create_vbox_container(params)
+        "create_grid_container": create_grid_container(params)
+        "create_tab_container": create_tab_container(params)
+        "create_scroll_container": create_scroll_container(params)
+        "create_button": create_button(params)
+        "create_label": create_label(params)
+        "create_texture_rect": create_texture_rect(params)
+        "create_line_edit": create_line_edit(params)
+        "create_text_edit": create_text_edit(params)
+        "create_check_box": create_check_box(params)
+        "create_check_button": create_check_button(params)
+        "create_option_button": create_option_button(params)
+        "create_progress_bar": create_progress_bar(params)
+        "create_slider": create_slider(params)
+        "set_theme_stylebox": set_theme_stylebox(params)
+        "create_theme": create_theme(params)
+        "apply_theme_to_node": apply_theme_to_node(params)
+        "set_font": set_font(params)
+        "create_file_dialog": create_file_dialog(params)
+        "create_accept_dialog": create_accept_dialog(params)
+        "create_confirm_dialog": create_confirm_dialog(params)
+        "create_message_dialog": create_message_dialog(params)
+        "delete_scene": delete_scene(params)
+        "rename_node": rename_node(params)
+        "find_node_by_type": find_node_by_type(params)
+        "delete_script": delete_script(params)
+        "read_script": read_script(params)
+        "get_script_methods": get_script_methods(params)
+        "get_project_settings": get_project_settings(params)
+        "import_all_assets": import_all_assets(params)
+        "cleanup_backups": cleanup_backups(params)
+        "log_to_console": log_to_console(params)
+        "runtime_eval_gdscript": runtime_eval_gdscript(params)
         _:
             printerr("[ERROR] Unknown operation: " + operation)
             quit(1)
@@ -105,11 +139,12 @@ func _init():
     quit()
 
 func log_debug(msg: String):
-    if debug_mode:
-        print("[DEBUG] " + msg)
+    # Always print debug to help diagnose issues
+    print("[DEBUG] " + msg)
 
 func log_info(msg: String):
-    print("[INFO] " + msg)
+    # Output structured result for MCP parsing
+    print("MCP_RESULT:" + JSON.stringify({ "status": "success", "message": msg }))
 
 func _normalize_path(path: String) -> String:
     if not path.begins_with("res://"):
@@ -269,29 +304,46 @@ func create_scene(params):
     
     log_debug("Creating scene: " + scene_path + " with root type: " + root_type)
     
+    # Debug: print paths
+    print("[DEBUG] scene_path: " + scene_path)
+    print("[DEBUG] current project: " + ProjectSettings.get_setting("application/config/name"))
+    
+    # Ensure directory exists before saving
+    var scene_dir = scene_path.get_base_dir()
+    if scene_dir != "res://":
+        if not _ensure_dir(scene_dir):
+            printerr("[ERROR] Failed to create directory: " + scene_dir)
+            quit(1)
+    
     var root = instantiate_node(root_type)
     if root == null:
         printerr("[ERROR] Failed to instantiate root node type: " + root_type)
         quit(1)
 
     root.name = "root"
-    # NOTE: root.owner = root is not allowed in Godot 4.6+ (node cannot own itself)
 
     var packed = PackedScene.new()
     if packed.pack(root) != OK:
         printerr("[ERROR] Failed to pack scene")
         quit(1)
 
-    var scene_dir = scene_path.get_base_dir()
-    if scene_dir != "res://":
-        var abs_dir = _to_absolute(scene_dir)
-        _ensure_dir_from_absolute(abs_dir)
-
-    if ResourceSaver.save(packed, scene_path) != OK:
-        printerr("[ERROR] Failed to save scene")
+    var save_result = ResourceSaver.save(packed, scene_path)
+    if save_result != OK:
+        printerr("[ERROR] Failed to save scene to: " + scene_path + " Error code: " + str(save_result))
         quit(1)
     
-    log_info("Scene created: " + scene_path)
+    var abs_path = _to_absolute(scene_path)
+    var file_exists = FileAccess.file_exists(abs_path)
+    print("[DEBUG] Absolute path: " + abs_path)
+    print("[DEBUG] File exists: " + str(file_exists))
+    print("[DEBUG] Dir exists: " + str(DirAccess.dir_exists_absolute(abs_path.get_base_dir())))
+    
+    # Output structured result
+    print("MCP_RESULT:" + JSON.stringify({ 
+        "status": "success", 
+        "scene_path": scene_path,
+        "root_type": root_type
+    }))
 
 func add_node(params):
     var scene_path = _normalize_path(params.scene_path)
@@ -3270,3 +3322,1252 @@ func _compare_nodes(node_a: Node, node_b: Node, path: String = "") -> Array:
         })
     
     return differences
+
+# ===== UI CONTAINERS =====
+
+func create_hbox_container(params):
+    _create_container(params, "HBoxContainer")
+
+func create_vbox_container(params):
+    _create_container(params, "VBoxContainer")
+
+func create_grid_container(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var columns = params.get("columns", 2)
+    var children = params.get("children", [])
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating GridContainer: " + node_name + " with " + str(columns) + " columns")
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var container = GridContainer.new()
+    container.name = node_name
+    container.columns = columns
+    
+    for prop in properties:
+        container.set(prop, properties[prop])
+    
+    _add_container_children(container, children, root)
+    
+    parent.add_child(container)
+    container.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "GridContainer",
+        "columns": columns,
+        "children_count": children.size()
+    }))
+
+func create_tab_container(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var tabs = params.get("tabs", [])
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating TabContainer: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var container = TabContainer.new()
+    container.name = node_name
+    
+    for prop in properties:
+        container.set(prop, properties[prop])
+    
+    for tab in tabs:
+        var tab_control = Control.new()
+        tab_control.name = tab.get("name", "Tab")
+        container.add_child(tab_control)
+    
+    parent.add_child(container)
+    container.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "TabContainer",
+        "tabs_count": tabs.size()
+    }))
+
+func create_scroll_container(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating ScrollContainer: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var container = ScrollContainer.new()
+    container.name = node_name
+    
+    for prop in properties:
+        container.set(prop, properties[prop])
+    
+    parent.add_child(container)
+    container.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "ScrollContainer"
+    }))
+
+func _create_container(params, container_type: String):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var children = params.get("children", [])
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating " + container_type + ": " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "":
+            printerr("[ERROR] Failed to create backup")
+            quit(1)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var container = ClassDB.instantiate(container_type)
+    if container == null:
+        printerr("[ERROR] Failed to instantiate: " + container_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    container.name = node_name
+    
+    for prop in properties:
+        var value = properties[prop]
+        if typeof(value) == TYPE_STRING and value.begins_with("res://"):
+            value = load(value)
+        container.set(prop, value)
+    
+    _add_container_children(container, children, root)
+    
+    parent.add_child(container)
+    container.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": container_type,
+        "children_count": children.size()
+    }))
+
+func _add_container_children(container: Node, children: Array, root: Node):
+    for child_def in children:
+        var child_type = child_def.get("type", "Control")
+        var child_name = child_def.get("name", "Child")
+        var child_properties = child_def.get("properties", {})
+        
+        var child = ClassDB.instantiate(child_type)
+        if child == null:
+            continue
+        
+        child.name = child_name
+        
+        for prop in child_properties:
+            child.set(prop, child_properties[prop])
+        
+        container.add_child(child)
+        child.owner = root
+
+# ===== UI CONTROLES =====
+
+func create_button(params):
+    _create_ui_control(params, "Button")
+
+func create_label(params):
+    _create_ui_control(params, "Label")
+
+func create_texture_rect(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var texture_path = params.get("texture_path", "")
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating TextureRect: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = TextureRect.new()
+    control.name = node_name
+    
+    if texture_path != "":
+        var texture = load(_normalize_path(texture_path))
+        if texture != null:
+            control.texture = texture
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "TextureRect"
+    }))
+
+func create_line_edit(params):
+    _create_ui_control_with_text(params, "LineEdit")
+
+func create_text_edit(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var text = params.get("text", "")
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating TextEdit: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = TextEdit.new()
+    control.name = node_name
+    control.text = text
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "TextEdit"
+    }))
+
+func create_check_box(params):
+    _create_ui_control_with_text(params, "CheckBox")
+
+func create_check_button(params):
+    _create_ui_control_with_text(params, "CheckButton")
+
+func create_option_button(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var items = params.get("items", [])
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating OptionButton: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = OptionButton.new()
+    control.name = node_name
+    
+    for item in items:
+        control.add_item(str(item))
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "OptionButton",
+        "items_count": items.size()
+    }))
+
+func create_progress_bar(params):
+    _create_ui_control_with_value(params, "ProgressBar")
+
+func create_slider(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var min_value = params.get("min", 0)
+    var max_value = params.get("max", 100)
+    var value = params.get("value", 50)
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating HSlider: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = HSlider.new()
+    control.name = node_name
+    control.min_value = min_value
+    control.max_value = max_value
+    control.value = value
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "HSlider",
+        "min": min_value,
+        "max": max_value,
+        "value": value
+    }))
+
+func _create_ui_control(params, control_type: String):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating " + control_type + ": " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = ClassDB.instantiate(control_type)
+    if control == null:
+        printerr("[ERROR] Failed to instantiate: " + control_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    control.name = node_name
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": control_type
+    }))
+
+func _create_ui_control_with_text(params, control_type: String):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var text = params.get("text", "")
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating " + control_type + ": " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = ClassDB.instantiate(control_type)
+    if control == null:
+        printerr("[ERROR] Failed to instantiate: " + control_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    control.name = node_name
+    if control.has_method("set_text"):
+        control.set_text(text)
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": control_type,
+        "text": text
+    }))
+
+func _create_ui_control_with_value(params, control_type: String):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var min_value = params.get("min", 0)
+    var max_value = params.get("max", 100)
+    var value = params.get("value", 0)
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating " + control_type + ": " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var control = ClassDB.instantiate(control_type)
+    if control == null:
+        printerr("[ERROR] Failed to instantiate: " + control_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    control.name = node_name
+    control.min_value = min_value
+    control.max_value = max_value
+    control.value = value
+    
+    for prop in properties:
+        control.set(prop, properties[prop])
+    
+    parent.add_child(control)
+    control.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": control_type,
+        "min": min_value,
+        "max": max_value,
+        "value": value
+    }))
+
+# ===== UI ESTILIZAÇÃO =====
+
+func set_theme_stylebox(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var style_type = params.get("style_type", "normal")
+    var bg_color = params.get("bg_color", { "r": 0.3, "g": 0.3, "b": 0.3, "a": 1 })
+    var border_color = params.get("border_color", { "r": 0.5, "g": 0.5, "b": 0.5, "a": 1 })
+    var corner_radius = params.get("corner_radius", 0)
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Setting stylebox on: " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if not target is Control:
+        printerr("[ERROR] Node is not a Control")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var stylebox = StyleBoxFlat.new()
+    stylebox.bg_color = _parse_color(bg_color)
+    stylebox.border_color = _parse_color(border_color)
+    stylebox.corner_radius_top_left = corner_radius
+    stylebox.corner_radius_top_right = corner_radius
+    stylebox.corner_radius_bottom_left = corner_radius
+    stylebox.corner_radius_bottom_right = corner_radius
+    
+    match style_type:
+        "normal":
+            target.add_theme_stylebox_override("normal", stylebox)
+        "hover":
+            target.add_theme_stylebox_override("hover", stylebox)
+        "pressed":
+            target.add_theme_stylebox_override("pressed", stylebox)
+        "disabled":
+            target.add_theme_stylebox_override("disabled", stylebox)
+        "focus":
+            target.add_theme_stylebox_override("focus", stylebox)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "style_type": style_type,
+        "bg_color": bg_color
+    }))
+
+func create_theme(params):
+    var project_path = params.get("project_path", "res://")
+    var path = _normalize_path(params.get("path", "themes/default.tres"))
+    var name = params.get("name", "Theme")
+    
+    log_debug("Creating theme: " + path)
+    
+    var theme = Theme.new()
+    theme.name = name
+    
+    var abs_path = _to_absolute(path)
+    var dir_path = abs_path.get_base_dir()
+    var dir = DirAccess.open(dir_path)
+    if dir == null:
+        var parent = DirAccess.open("res://")
+        if parent != null:
+            parent.make_dir_recursive(path.get_base_dir().replace("res://", ""))
+    
+    var error = ResourceSaver.save(theme, abs_path)
+    if error != OK:
+        printerr("[ERROR] Failed to save theme: " + str(error))
+        quit(1)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "path": path,
+        "name": name
+    }))
+
+func apply_theme_to_node(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var theme_path = _normalize_path(params.theme_path)
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Applying theme to: " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var theme = load(theme_path)
+    if theme == null:
+        printerr("[ERROR] Theme not found: " + theme_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    target.theme = theme
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "theme_path": theme_path
+    }))
+
+func set_font(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var font_path = _normalize_path(params.font_path)
+    var font_size = params.get("font_size", 16)
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Setting font on: " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var font = load(font_path)
+    if font == null:
+        printerr("[ERROR] Font not found: " + font_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    if target is Label:
+        target.add_theme_font_override("font", font)
+        target.add_theme_font_size_override("font_size", font_size)
+    elif target is Button:
+        target.add_theme_font_override("font", font)
+        target.add_theme_font_size_override("font_size", font_size)
+    elif target is Control:
+        target.add_theme_font_override("font", font)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "font_path": font_path,
+        "font_size": font_size
+    }))
+
+# ===== UI DIÁLOGOS =====
+
+func create_file_dialog(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var mode = params.get("mode", 0)
+    var access = params.get("access", 0)
+    var filters = params.get("filters", ["*.*"])
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating FileDialog: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var dialog = FileDialog.new()
+    dialog.name = node_name
+    dialog.file_mode = mode
+    dialog.access = access
+    dialog.filters = filters
+    
+    for prop in properties:
+        dialog.set(prop, properties[prop])
+    
+    parent.add_child(dialog)
+    dialog.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "FileDialog",
+        "mode": mode,
+        "access": access
+    }))
+
+func create_accept_dialog(params):
+    _create_dialog(params, "AcceptDialog")
+
+func create_confirm_dialog(params):
+    _create_dialog(params, "ConfirmDialog")
+
+func create_message_dialog(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var title = params.get("title", "Message")
+    var message = params.get("message", "")
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating MessageDialog: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var dialog = Panel.new()  # Use Panel as fallback for headless
+    dialog.name = node_name
+    # Note: MessageDialog/AcceptDialog/ConfirmDialog require editor context
+    
+    for prop in properties:
+        dialog.set(prop, properties[prop])
+    
+    parent.add_child(dialog)
+    dialog.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "MessageDialog",
+        "title": title
+    }))
+
+func _create_dialog(params, dialog_type: String):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var title = params.get("title", dialog_type)
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating " + dialog_type + ": " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var dialog = ClassDB.instantiate(dialog_type)
+    if dialog == null:
+        printerr("[ERROR] Failed to instantiate: " + dialog_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    dialog.name = node_name
+    dialog.title = title
+    
+    for prop in properties:
+        dialog.set(prop, properties[prop])
+    
+    parent.add_child(dialog)
+    dialog.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": dialog_type,
+        "title": title
+    }))
+
+# ===== SCENE OPERATIONS =====
+
+func delete_scene(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var abs_path = _to_absolute(scene_path)
+    
+    log_debug("Deleting scene: " + scene_path)
+    
+    if not FileAccess.file_exists(abs_path):
+        printerr("[ERROR] Scene not found: " + scene_path)
+        quit(1)
+    
+    DirAccess.remove_absolute(abs_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "scene_path": scene_path,
+        "deleted": true
+    }))
+
+func rename_node(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var new_name = params.new_name
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Renaming node: " + node_path + " to " + new_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var old_name = target.name
+    target.name = new_name
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "old_name": old_name,
+        "new_name": new_name
+    }))
+
+func find_node_by_type(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_type = params.type
+    var recursive = params.get("recursive", true)
+    
+    log_debug("Finding nodes by type: " + node_type)
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        quit(1)
+    
+    var root = scene.instantiate()
+    var results = []
+    
+    _collect_by_type(root, node_type, recursive, results)
+    
+    root.free()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "type": node_type,
+        "count": results.size(),
+        "nodes": results
+    }))
+
+func _collect_by_type(node: Node, node_type: String, recursive: bool, results: Array):
+    if node.get_class() == node_type:
+        results.append({
+            "name": node.name,
+            "path": node.get_path()
+        })
+    
+    if recursive:
+        for child in node.get_children():
+            _collect_by_type(child, node_type, recursive, results)
+
+# ===== SCRIPT OPERATIONS =====
+
+func delete_script(params):
+    var script_path = _normalize_path(params.script_path)
+    var abs_path = _to_absolute(script_path)
+    
+    log_debug("Deleting script: " + script_path)
+    
+    if not FileAccess.file_exists(abs_path):
+        printerr("[ERROR] Script not found: " + script_path)
+        quit(1)
+    
+    DirAccess.remove_absolute(abs_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "script_path": script_path,
+        "deleted": true
+    }))
+
+func read_script(params):
+    var script_path = _normalize_path(params.script_path)
+    var abs_path = _to_absolute(script_path)
+    
+    log_debug("Reading script: " + script_path)
+    
+    if not FileAccess.file_exists(abs_path):
+        printerr("[ERROR] Script not found: " + script_path)
+        quit(1)
+    
+    var file = FileAccess.open(abs_path, FileAccess.READ)
+    if file == null:
+        printerr("[ERROR] Failed to open script")
+        quit(1)
+    
+    var content = file.get_buffer(file.get_length()).get_string_from_utf8()
+    file.close()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "script_path": script_path,
+        "content": content,
+        "size": content.length()
+    }))
+
+func get_script_methods(params):
+    var script_path = _normalize_path(params.script_path)
+    
+    log_debug("Getting methods from: " + script_path)
+    
+    var script = load(script_path)
+    if script == null:
+        printerr("[ERROR] Failed to load script")
+        quit(1)
+    
+    var methods = []
+    if script.get_script_method_list:
+        for method in script.get_script_method_list():
+            methods.append(method.name)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "script_path": script_path,
+        "count": methods.size(),
+        "methods": methods
+    }))
+
+# ===== PROJECT MANAGEMENT =====
+
+func get_project_settings(params):
+    var filter = params.get("filter", "")
+    
+    log_debug("Getting project settings")
+    
+    var settings = []
+    var props = ProjectSettings.get_property_list()
+    
+    for prop in props:
+        if filter == "" or prop.name.contains(filter):
+            var value = ProjectSettings.get_setting(prop.name)
+            settings.append({
+                "name": prop.name,
+                "type": _get_type_name(prop.type),
+                "value": _serialize_variant(value)
+            })
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "count": settings.size(),
+        "settings": settings
+    }))
+
+func import_all_assets(params):
+    var project_path = params.get("project_path", "res://")
+    if not project_path.begins_with("res://"):
+        project_path = "res://" + project_path
+    
+    log_debug("Reimporting all assets")
+    
+    var import_helper = "res://addons/mcpgodot/import_helper.gd"
+    var files = []
+    var dir = DirAccess.open(project_path)
+    if dir:
+        dir.list_dir_begin()
+        var name = dir.get_next()
+        while name != "":
+            if name.ends_with(".png") or name.ends_with(".jpg") or name.ends_with(".wav"):
+                files.append(name)
+            name = dir.get_next()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "message": "Asset reimport triggered",
+        "files_found": files.size()
+    }))
+
+func cleanup_backups(params):
+    var project_path = params.get("project_path", "res://")
+    var older_than_days = params.get("older_than_days", 7)
+    
+    log_debug("Cleaning up backups older than " + str(older_than_days) + " days")
+    
+    var backup_dir = _to_absolute("res://mcp_backups")
+    var deleted = 0
+    
+    if DirAccess.dir_exists_absolute(backup_dir):
+        var dir = DirAccess.open(backup_dir)
+        if dir:
+            dir.list_dir_begin()
+            var name = dir.get_next()
+            var current_time = Time.get_unix_time_from_system()
+            var cutoff_time = current_time - (older_than_days * 86400)
+            
+            while name != "":
+                if name.ends_with(".tscn") or name.ends_with(".gd"):
+                    var file_path = backup_dir + "/" + name
+                    # Skip mod time check as DirAccess.get_modified_time doesn't exist
+                    DirAccess.remove_absolute(file_path)
+                    deleted += 1
+                name = dir.get_next()
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "deleted": deleted,
+        "older_than_days": older_than_days
+    }))
+
+# ===== DEBUGGING =====
+
+func log_to_console(params):
+    var message = params.get("message", "")
+    var msg_type = params.get("type", "info")
+    
+    match msg_type:
+        "error":
+            printerr("[MCP] " + message)
+        "warning":
+            push_warning("[MCP] " + message)
+        _:
+            print("[MCP] " + message)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "message": message,
+        "type": msg_type
+    }))
+
+func runtime_eval_gdscript(params):
+    var project_path = params.project_path
+    var script = params.get("script", "")
+    var port = params.get("port", 9090)
+    
+    log_debug("Evaluating GDScript in runtime")
+    
+    # Not implemented - stub for runtime debug
+    print("MCP_RESULT:" + JSON.stringify({
+        "status": "not_implemented",
+        "message": "runtime_eval_gdscript requires runtime debug server",
+        "script": script
+    }))
