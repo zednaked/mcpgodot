@@ -1669,10 +1669,18 @@ func connect_signal(params):
         quit(1)
     
     if to_node == null:
+        # Try special case for "." or "root"
+        if to_node_path == ".":
+            to_node = root
+        elif to_node_path == "root" or to_node_path == "":
+            to_node = root
+    
+    if to_node == null:
         printerr("[ERROR] Target node not found: " + to_node_path)
         if backup_path != "": _cleanup_backup(backup_path)
         quit(1)
     
+    log_debug("Connecting signal: " + signal_name + " from " + from_node.name + " to " + to_node.name + " method " + method_name)
     var result = from_node.connect(signal_name, Callable(to_node, method_name))
     
     if result != OK:
@@ -1680,11 +1688,14 @@ func connect_signal(params):
         if backup_path != "": _cleanup_backup(backup_path)
         quit(1)
     
+    log_debug("Saving scene after connection...")
     if _save_packed_scene(root, scene_path) != OK:
         if backup_path != "": _restore_backup(scene_path, backup_path)
         if backup_path != "": _cleanup_backup(backup_path)
         printerr("[ERROR] Failed to save scene")
         quit(1)
+    
+    log_debug("Scene saved successfully")
     
     if backup_path != "": _cleanup_backup(backup_path)
     print("MCP_RESULT:" + JSON.stringify({"success": true, "signal": signal_name, "from": from_node_path, "to": to_node_path, "method": method_name}))

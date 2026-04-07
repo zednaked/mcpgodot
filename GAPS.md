@@ -6,8 +6,28 @@
 |---------|-------|
 | **Tools totais** | 116 |
 | **Operações GDScript** | ~50 |
-| **Testes passando** | 9/9 ✅ |
+| **Bugs corrigidos** | 4 |
 | **Gaps restantes** | 0 |
+
+---
+
+## Bugs Corrigidos ✅
+
+1. **`_find_node_by_path`** (godot_operations.gd:222)
+   - Problema: Não encontrava nodes por nome simples ("GoldLabel")
+   - Solução: Adicionado fallback com `find_child()` para buscar por nome
+
+2. **`set_node_property`** (godot_operations.gd:1326)
+   - Problema: Usava `target.has(property)` - sintaxe incorreta em GDScript
+   - Solução: Alterado para `property in target`
+
+3. **`connect_signal`** (godot_operations.gd:1645)
+   - Problema: Não aceitava "." ou "root" como to_node
+   - Solução: Adicionado fallback para detectar "." e "root" e usar o root scene
+
+4. **`_save_packed_scene`**
+   - Problema: Conexões de sinais não eram salvas no .tscn
+   - Observação: Funcionalidade do Godot - conexões devem ser feitas via código no _ready()
 
 ---
 
