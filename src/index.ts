@@ -630,20 +630,62 @@ class GodotMCP {
     const cmdArgs = ['-d', '--path', args.projectPath as string];
     if (args.scene) cmdArgs.push(args.scene as string);
 
-    const proc = spawn(this.godotPath!, cmdArgs, { stdio: 'pipe' });
+    const proc = spawn(this.godotPath!, cmdArgs, { 
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false 
+    });
     const output: string[] = [], errors: string[] = [];
 
-    proc.stdout?.on('data', (d: Buffer) => output.push(...d.toString().split('\n')));
-    proc.stderr?.on('data', (d: Buffer) => errors.push(...d.toString().split('\n')));
-    proc.on('exit', () => { if (this.activeProcess?.process === proc) this.activeProcess = null; });
+    proc.stdout?.on('data', (d: Buffer) => {
+      const lines = d.toString().split('\n').filter(l => l.trim());
+      output.push(...lines);
+    });
+    proc.stderr?.on('data', (d: Buffer) => {
+      const lines = d.toString().split('\n').filter(l => l.trim());
+      errors.push(...lines);
+    });
+    
+    proc.on('exit', (code) => { 
+      if (this.activeProcess?.process === proc) {
+        this.activeProcess.output.push(`Process exited with code: ${code}`);
+        this.activeProcess = null; 
+      }
+    });
+
+    proc.on('error', (err) => {
+      errors.push(`Process error: ${err.message}`);
+    });
 
     this.activeProcess = { process: proc, output, errors };
-    return { content: [{ type: 'text', text: 'Project started in debug mode' }] };
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    return { content: [{ type: 'text', text: `Project started (PID: ${proc.pid}). Use get_debug_output to check status.` }] };
   }
 
   private handleGetDebugOutput() {
-    if (!this.activeProcess) return this.error('No active process', ['Run run_project first']);
-    return { content: [{ type: 'text', text: JSON.stringify({ output: this.activeProcess.output, errors: this.activeProcess.errors }, null, 2) }] };
+    if (!this.activeProcess) {
+      return { content: [{ type: 'text', text: 'No active process. Use run_project or runtime_start_debug to start a game.' }] };
+    }
+    
+    const isRunning = this.activeProcess.process.pid && !this.activeProcess.process.killed;
+    
+    const output = this.activeProcess.output || [];
+    const errors = this.activeProcess.errors || [];
+    
+    const resultData = {
+      running: isRunning,
+      pid: this.activeProcess.process.pid || null,
+      output: output.slice(0, 50),
+      errors: errors.slice(0, 50)
+    };
+    
+    return { 
+      content: [{ 
+        type: 'text', 
+        text: JSON.stringify(resultData)
+      }] 
+    };
   }
 
   private handleStopProject() {
@@ -1123,10 +1165,16 @@ class GodotMCP {
       return this.error('Missing required params: projectPath');
     }
     
+    await this.ensureGodotPath();
+    
     const scenePath = args.scenePath as string;
     const projectPath = args.projectPath as string;
     
-    const sceneArgs = scenePath ? ['--path', projectPath, scenePath] : ['--path', projectPath];
+    if (!this.checkProject(projectPath)) {
+      return this.error('Not a valid Godot project');
+    }
+    
+    const sceneArgs = scenePath ? ['--path', projectPath, '--script', scenePath] : ['--path', projectPath];
     
     return new Promise<{ content: [{type: string, text: string}] }>((resolve) => {
       const proc = spawn(this.godotPath!, ['--headless', ...sceneArgs], {
@@ -1135,23 +1183,57 @@ class GodotMCP {
       
       let stdout = '';
       let stderr = '';
+      let timedOut = false;
       
-      proc.stdout?.on('data', (data) => { stdout += data.toString(); });
-      proc.stderr?.on('data', (data) => { stderr += data.toString(); });
-      
-      proc.on('close', (code) => {
-        resolve({
-          content: [{
-            type: 'text',
-            text: `Scene executed (exit code: ${code})\n${stdout}${stderr ? '\n' + stderr : ''}`
-          }]
-        });
+      proc.stdout?.on('data', (data) => { 
+        stdout += data.toString(); 
+      });
+      proc.stderr?.on('data', (data) => { 
+        stderr += data.toString(); 
       });
       
-      setTimeout(() => {
-        proc.kill();
-        resolve({ content: [{ type: 'text', text: 'Scene execution timed out' }] });
-      }, 30000);
+      const timeoutMs = 15000;
+      const timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        proc.kill('SIGTERM');
+      }, timeoutMs);
+      
+      proc.on('close', (code) => {
+        clearTimeout(timeoutHandle);
+        
+        if (timedOut) {
+          resolve({ 
+            content: [{ 
+              type: 'text', 
+              text: `⏱️ Scene execution timed out after ${timeoutMs/1000}s\n\nOutput:\n${stdout}\n\nErrors:\n${stderr}` 
+            }] 
+          });
+        } else if (code === 0) {
+          resolve({ 
+            content: [{ 
+              type: 'text', 
+              text: `✅ Scene completed successfully (exit code: ${code})\n\nOutput:\n${stdout}` 
+            }] 
+          });
+        } else {
+          resolve({ 
+            content: [{ 
+              type: 'text', 
+              text: `❌ Scene failed (exit code: ${code})\n\nOutput:\n${stdout}\n\nErrors:\n${stderr}` 
+            }] 
+          });
+        }
+      });
+      
+      proc.on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        resolve({ 
+          content: [{ 
+            type: 'text', 
+            text: `❌ Failed to run scene: ${err.message}` 
+          }] 
+        });
+      });
     });
   }
 
@@ -1188,13 +1270,25 @@ class GodotMCP {
       return this.error('Missing required params: projectPath, scenePath');
     }
     
+    if (!this.checkProject(args.projectPath as string)) {
+      return this.error('Not a valid Godot project');
+    }
+    
+    const scenePath = args.scenePath as string;
+    const absScenePath = existsSync(join(args.projectPath as string, scenePath.replace('res://', '')))
+      ? scenePath
+      : 'res://' + scenePath.replace(/^res:\/\//, '');
+    
     const params: Record<string, unknown> = {
-      scene_path: args.scenePath
+      scene_path: absScenePath
     };
     
     const { stdout, stderr } = await this.executeOp('validate_scene', params, args.projectPath as string);
     
-    if (stderr.includes('[ERROR]')) return this.error(`Failed: ${stderr}`);
+    if (stderr.includes('[ERROR]')) {
+      const errorMsg = stderr.split('\n').filter(l => l.includes('[ERROR]')).join('\n');
+      return this.error(`Scene validation failed: ${errorMsg}`);
+    }
     
     const mcpMatch = stdout.match(/MCP_RESULT:(.+)$/m);
     if (mcpMatch) {
@@ -1207,10 +1301,10 @@ class GodotMCP {
         if (data.issues_count > 0) {
           message += `\n❌ ${data.issues_count} issues`;
         }
-        if (data.issues.length > 0) {
+        if (data.issues && data.issues.length > 0) {
           message += '\n\nIssues:\n' + data.issues.map((i: string) => '  - ' + i).join('\n');
         }
-        if (data.warnings.length > 0) {
+        if (data.warnings && data.warnings.length > 0) {
           message += '\n\nWarnings:\n' + data.warnings.map((w: string) => '  - ' + w).join('\n');
         }
         return { content: [{ type: 'text', text: message }] };
@@ -1491,6 +1585,10 @@ class GodotMCP {
       return this.error('Invalid project path');
     }
     
+    if (!this.checkProject(args.projectPath as string)) {
+      return this.error('Not a valid Godot project');
+    }
+    
     await this.ensureGodotPath();
     if (this.activeProcess) this.activeProcess.process.kill();
     
@@ -1505,9 +1603,55 @@ class GodotMCP {
     proc.stdout?.on('data', (d: Buffer) => output.push(...d.toString().split('\n')));
     proc.stderr?.on('data', (d: Buffer) => errors.push(...d.toString().split('\n')));
     proc.on('exit', () => { if (this.activeProcess?.process === proc) this.activeProcess = null; });
+    
+    proc.on('error', (err) => {
+      errors.push(`Process error: ${err.message}`);
+    });
 
     this.activeProcess = { process: proc, output, errors };
-    return { content: [{ type: 'text', text: 'Game started with debug server on port 9090. Wait a moment for it to load, then use runtime tools.' }] };
+    
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    const port = 9090;
+    let serverReady = false;
+    let retries = 5;
+    
+    while (retries > 0 && !serverReady) {
+      try {
+        const { Socket } = await import('net');
+        await new Promise<void>((resolve, reject) => {
+          const client = new Socket();
+          client.setTimeout(500);
+          client.connect(port, '127.0.0.1', () => {
+            client.write(JSON.stringify({ command: 'ping', id: 1 }) + '\n');
+            client.setTimeout(500);
+            client.on('data', () => {
+              serverReady = true;
+              client.destroy();
+              resolve();
+            });
+          });
+          client.on('timeout', () => {
+            client.destroy();
+            resolve();
+          });
+          client.on('error', () => {
+            client.destroy();
+            resolve();
+          });
+        });
+      } catch {}
+      if (!serverReady) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries--;
+      }
+    }
+    
+    if (serverReady) {
+      return { content: [{ type: 'text', text: `✅ Game started with debug server on port ${port}. Ready to use runtime tools.` }] };
+    } else {
+      return { content: [{ type: 'text', text: `⚠️ Game started but debug server may not be ready. Errors: ${errors.slice(0, 3).join(', ')}` }] };
+    }
   }
 
   private LAYOUT_PRESETS: Record<string, Record<string, unknown>> = {
