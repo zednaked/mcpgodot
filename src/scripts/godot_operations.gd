@@ -227,7 +227,13 @@ func _find_node_by_path(root: Node, path: String) -> Node:
         clean_path = clean_path.substr(5)
     if clean_path.begins_with("/"):
         clean_path = clean_path.substr(1)
-    return root.get_node_or_null(clean_path)
+    
+    var result = root.get_node_or_null(clean_path)
+    if result != null:
+        return result
+    
+    # Fallback: search by simple name (e.g., "GoldLabel" instead of full path)
+    return root.find_child(clean_path, true, false)
 
 func _create_backup(scene_path: String) -> String:
     var abs_path = _to_absolute(scene_path)
@@ -1317,7 +1323,8 @@ func set_node_property(params):
     if typeof(value) == TYPE_DICTIONARY:
         value = _deserialize_value(value, target, property)
     
-    if not target.has(property):
+    # Check if property exists on target
+    if not (property in target):
         if backup_path != "": _cleanup_backup(backup_path)
         printerr("[ERROR] Node has no property: " + property)
         quit(1)
