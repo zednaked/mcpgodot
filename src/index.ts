@@ -390,6 +390,9 @@ class GodotMCP {
       { name: 'create_accept_dialog', desc: 'Create AcceptDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
       { name: 'create_confirm_dialog', desc: 'Create ConfirmDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
       { name: 'create_message_dialog', desc: 'Create MessageDialog', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', message: 'string?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'create_window', desc: 'Create Window node', props: { projectPath: 'string', scenePath: 'string', nodeName: 'string', title: 'string?', size: 'object?', position: 'object?', parentNodePath: 'string?', properties: 'object?', createBackup: 'boolean?' } },
+      { name: 'set_window_property', desc: 'Set property on Window node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', property: 'string', value: 'unknown', createBackup: 'boolean?' } },
+      { name: 'add_sub_resource', desc: 'Add sub-resource (StyleBoxFlat, etc) to node', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', subResourceType: 'string', resourceProperty: 'string?', subResourceProperties: 'object?', createBackup: 'boolean?' } },
       // Scene Operations
       { name: 'delete_scene', desc: 'Delete scene file', props: { projectPath: 'string', scenePath: 'string' } },
       { name: 'rename_node', desc: 'Rename node in scene', props: { projectPath: 'string', scenePath: 'string', nodePath: 'string', newName: 'string', createBackup: 'boolean?' } },
@@ -577,6 +580,9 @@ class GodotMCP {
         // Debugging
         case 'log_to_console': return this.handleLogToConsole(args);
         case 'runtime_eval_gdscript': return this.handleRuntimeEvalGDScript(args);
+        case 'create_window': return this.handleGenericOp('create_window', args);
+        case 'set_window_property': return this.handleGenericOp('set_window_property', args);
+        case 'add_sub_resource': return this.handleGenericOp('add_sub_resource', args);
         default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${req.params.name}`);
       }
     });

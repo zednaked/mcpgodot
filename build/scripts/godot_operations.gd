@@ -121,6 +121,9 @@ func _init():
         "create_accept_dialog": create_accept_dialog(params)
         "create_confirm_dialog": create_confirm_dialog(params)
         "create_message_dialog": create_message_dialog(params)
+        "create_window": create_window(params)
+        "set_window_property": set_window_property(params)
+        "add_sub_resource": add_sub_resource(params)
         "delete_scene": delete_scene(params)
         "rename_node": rename_node(params)
         "find_node_by_type": find_node_by_type(params)
@@ -4570,4 +4573,151 @@ func runtime_eval_gdscript(params):
         "status": "not_implemented",
         "message": "runtime_eval_gdscript requires runtime debug server",
         "script": script
+    }))
+
+func create_window(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var parent_path = params.get("parent_node_path", "root")
+    var node_name = params.node_name
+    var title = params.get("title", "Window")
+    var size = params.get("size", {"x": 400, "y": 300})
+    var position = params.get("position", {"x": 100, "y": 100})
+    var properties = params.get("properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Creating Window: " + node_name)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var parent = _find_node_by_path(root, parent_path)
+    if parent == null:
+        printerr("[ERROR] Parent not found: " + parent_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var window = Window.new()
+    window.name = node_name
+    window.title = title
+    
+    if typeof(size) == TYPE_DICTIONARY:
+        window.size = Vector2(float(size.get("x", 400)), float(size.get("y", 300)))
+    if typeof(position) == TYPE_DICTIONARY:
+        window.position = Vector2i(int(position.get("x", 100)), int(position.get("y", 100)))
+    
+    for prop in properties:
+        window.set(prop, properties[prop])
+    
+    parent.add_child(window)
+    window.owner = root
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_name": node_name,
+        "type": "Window",
+        "title": title,
+        "size": { "x": window.size.x, "y": window.size.y }
+    }))
+
+func set_window_property(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var property = params.property
+    var value = params.get("value", null)
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Setting window property on: " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    target.set(property, value)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "property": property,
+        "value": str(value)
+    }))
+
+func add_sub_resource(params):
+    var scene_path = _normalize_path(params.scene_path)
+    var node_path = params.node_path
+    var sub_resource_type = params.sub_resource_type
+    var resource_property = params.get("resource_property", "")
+    var sub_resource_properties = params.get("sub_resource_properties", {})
+    var create_backup = params.get("create_backup", false)
+    
+    log_debug("Adding sub-resource to: " + node_path)
+    
+    var backup_path = ""
+    if create_backup:
+        backup_path = _create_backup(scene_path)
+        if backup_path == "": printerr("[WARNING] Backup failed")
+    
+    var scene = load(scene_path)
+    if scene == null:
+        printerr("[ERROR] Failed to load scene")
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var root = scene.instantiate()
+    var target = _find_node_by_path(root, node_path)
+    if target == null:
+        printerr("[ERROR] Node not found: " + node_path)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    var sub_res = ClassDB.instantiate(sub_resource_type)
+    if sub_res == null:
+        printerr("[ERROR] Cannot instantiate: " + sub_resource_type)
+        if backup_path != "": _cleanup_backup(backup_path)
+        quit(1)
+    
+    for prop in sub_resource_properties:
+        sub_res.set(prop, sub_resource_properties[prop])
+    
+    if resource_property != "":
+        target.set(resource_property, sub_res)
+    else:
+        target.add_child(sub_res)
+    
+    _save_packed_scene(root, scene_path)
+    if backup_path != "": _cleanup_backup(backup_path)
+    
+    print("MCP_RESULT:" + JSON.stringify({
+        "success": true,
+        "node_path": node_path,
+        "sub_resource_type": sub_resource_type,
+        "property": resource_property
     }))
